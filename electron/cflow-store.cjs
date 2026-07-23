@@ -24,6 +24,22 @@ function makeId(prefix, count) {
   return `${prefix}-${String(count + 1).padStart(6, "0")}`;
 }
 
+function emptyStore() {
+  return {
+    boxes: [],
+    clients: [],
+    warehouse: [],
+    shipments: [],
+    finances: {
+      incomeToday: 0,
+      expectedToday: 0,
+      expensesToday: 0,
+      debt: 0,
+    },
+    activity: [],
+  };
+}
+
 function seedData() {
   const createdAt = nowIso();
   const clients = [
@@ -142,7 +158,7 @@ function seedData() {
 function ensureStore(app) {
   fs.mkdirSync(dataDir(app), { recursive: true });
   if (!fs.existsSync(storePath(app))) {
-    fs.writeFileSync(storePath(app), JSON.stringify(seedData(), null, 2), "utf8");
+    fs.writeFileSync(storePath(app), JSON.stringify(emptyStore(), null, 2), "utf8");
   }
 }
 
@@ -150,15 +166,16 @@ function readStore(app) {
   ensureStore(app);
   const raw = fs.readFileSync(storePath(app), "utf8").replace(/^\uFEFF/, "");
   const data = JSON.parse(raw);
+  const defaults = emptyStore();
   return {
-    ...seedData(),
+    ...defaults,
     ...data,
     boxes: Array.isArray(data.boxes) ? data.boxes : [],
     clients: Array.isArray(data.clients) ? data.clients : [],
     warehouse: Array.isArray(data.warehouse) ? data.warehouse : [],
     shipments: Array.isArray(data.shipments) ? data.shipments : [],
     activity: Array.isArray(data.activity) ? data.activity : [],
-    finances: data.finances || seedData().finances,
+    finances: data.finances || defaults.finances,
   };
 }
 
@@ -349,7 +366,7 @@ function recordPayment(app, input) {
 }
 
 function resetDemo(app) {
-  const data = seedData();
+  const data = emptyStore();
   writeStore(app, data);
   return publicSnapshot(app);
 }

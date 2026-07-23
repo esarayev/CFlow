@@ -333,7 +333,7 @@ export default function Home() {
 
   async function resetDemoData() {
     if (!window.cflowData) return;
-    await runApi(window.cflowData.resetDemo(), "Данные сброшены к стартовому набору");
+    await runApi(window.cflowData.resetDemo(), "База очищена. Можно начинать работу с нуля");
   }
 
   function openScanner() {
@@ -705,6 +705,7 @@ function WarehousePanel({ zones, compact = false }: { zones: WarehouseZone[]; co
             <p>{item.note} · заполнено {item.fill}%</p>
           </div>
         ))}
+        {!zones.length ? <p className="empty-state">Склад пока не настроен. Укажите место хранения при приемке первой коробки.</p> : null}
       </div>
     </article>
   );
@@ -723,6 +724,7 @@ function ShipmentsPanel({ shipments }: { shipments: ShipmentItem[] }) {
             <span>{shipment.boxes.length} коробок</span>
           </div>
         ))}
+        {!shipments.length ? <p className="empty-state">Отправок пока нет. Создайте первую отправку через рабочую форму выше.</p> : null}
       </div>
     </article>
   );
@@ -746,9 +748,9 @@ function SettingsPanel({ onReset }: { onReset: () => void }) {
   return (
     <article className="panel">
       <div className="panel-head compact"><div><span className="eyebrow">Настройки</span><h2>Сервис</h2></div></div>
-      <p className="lead">Данные приложения хранятся локально в защищенной папке пользователя Windows. Следующий слой можно подключить к облачной базе через этот же API.</p>
+      <p className="lead">Данные приложения хранятся локально в папке пользователя Windows. Новая установка стартует с пустой базы, без демо-коробок и тестовых клиентов.</p>
       <div className="detail-actions">
-        <button type="button" onClick={onReset}>Сбросить стартовые данные</button>
+        <button type="button" onClick={onReset}>Очистить базу</button>
       </div>
     </article>
   );
@@ -767,6 +769,7 @@ function ActivityPanel({ activity }: { activity: ActivityItem[] }) {
             <span>{item.user}</span>
           </div>
         ))}
+        {!activity.length ? <p className="empty-state">История появится после первой операции.</p> : null}
       </div>
     </article>
   );

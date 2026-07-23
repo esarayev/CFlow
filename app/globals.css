@@ -9,9 +9,9 @@
   --line-strong: #d0d5dd;
   --panel: #ffffff;
   --panel-soft: #f8fafc;
-  --accent: #2500bf;
-  --accent-hover: #1f00a3;
-  --accent-soft: #eeebff;
+  --accent: #3C538B;
+  --accent-hover: #314573;
+  --accent-soft: #eef3fa;
   --success: #16865a;
   --success-soft: #eaf8f1;
   --danger: #c24135;
@@ -68,7 +68,7 @@ button:hover {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 3px solid rgba(37, 0, 191, 0.18);
+  outline: 3px solid rgba(60, 83, 139, 0.22);
   outline-offset: 2px;
 }
 
@@ -228,7 +228,7 @@ h2 {
 
 .nav-list button.active,
 .nav-list button:hover {
-  background: #111827;
+  background: var(--accent);
   color: #ffffff;
 }
 
@@ -336,7 +336,8 @@ h2 {
   align-content: start;
   gap: 10px;
   padding: 18px;
-  background: linear-gradient(180deg, #ffffff, #f7f6ff);
+  border-color: rgba(60, 83, 139, 0.28);
+  background: linear-gradient(180deg, #ffffff, #f2f5fa);
 }
 
 .scan-card strong {

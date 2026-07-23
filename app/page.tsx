@@ -48,6 +48,7 @@ type ActivityItem = {
   title: string;
   text: string;
   user: string;
+  boxId?: string;
 };
 
 type WarehouseZone = {
@@ -89,7 +90,7 @@ type ApiResult = {
   data?: CflowData;
 };
 
-type ActionMode = "receive" | "issue" | "move" | "client" | "shipment" | "payment" | "problem";
+type ActionMode = "receive" | "issue" | "move" | "client" | "shipment" | "payment" | "problem" | "status";
 type DetailModalState = { type: "box"; id: string } | { type: "client"; id: string } | null;
 
 type ActionFormState = {
@@ -111,6 +112,7 @@ type ActionFormState = {
   shipmentDate: string;
   shipmentBoxes: string;
   shipmentCost: string;
+  nextStatus: string;
 };
 
 declare global {
@@ -127,6 +129,7 @@ declare global {
       receiveBox: (payload: Record<string, string>) => Promise<ApiResult>;
       moveBox: (payload: Record<string, string>) => Promise<ApiResult>;
       issueBox: (payload: Record<string, string>) => Promise<ApiResult>;
+      updateStatus: (payload: Record<string, string>) => Promise<ApiResult>;
       problemBox: (payload: Record<string, string>) => Promise<ApiResult>;
       createClient: (payload: Record<string, string>) => Promise<ApiResult>;
       createShipment: (payload: Record<string, string>) => Promise<ApiResult>;
@@ -153,6 +156,26 @@ function canSeeFinance(user: SessionUser) {
 
 function money(value: number) {
   return `${new Intl.NumberFormat("ru-RU").format(value)} T`;
+}
+
+const boxStatuses = ["Принято", "На складе", "В отправке", "В пути", "На таможне", "Прибыло", "Ждет выдачи", "Выдано", "Без клиента", "Проблема", "Задержано", "Повреждено", "Возврат", "Потеряно"];
+
+function numericWeight(value?: string) {
+  const parsed = Number(String(value || "").replace(",", ".").replace(/[^\d.]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function volumeWeight(dimensions?: string) {
+  const parts = String(dimensions || "")
+    .split(/[xх*×]/i)
+    .map((part) => Number(part.trim().replace(",", ".")))
+    .filter((part) => Number.isFinite(part) && part > 0);
+  if (parts.length !== 3) return 0;
+  return Math.round((parts[0] * parts[1] * parts[2] / 5000) * 10) / 10;
+}
+
+function chargeableWeight(box: BoxItem) {
+  return Math.max(numericWeight(box.weight), volumeWeight(box.dimensions));
 }
 
 function isProblem(box: BoxItem) {
@@ -197,6 +220,7 @@ export default function Home() {
     shipmentDate: new Date().toISOString().slice(0, 10),
     shipmentBoxes: "",
     shipmentCost: "",
+    nextStatus: "Ждет выдачи",
   });
 
   const showFinance = sessionUser ? canSeeFinance(sessionUser) : false;
@@ -243,6 +267,12 @@ export default function Home() {
       box.clientId === modalClient.id || box.phone === modalClient.phone || box.client === modalClient.name,
     );
   }, [data.boxes, modalClient]);
+  const modalBoxActivity = useMemo(() => {
+    if (!modalBox) return [];
+    return data.activity.filter((item) =>
+      item.boxId === modalBox.id || item.text.includes(modalBox.id) || item.text.includes(modalBox.track) || Boolean(modalBox.code && item.text.includes(modalBox.code)),
+    );
+  }, [data.activity, modalBox]);
 
   const metrics = [
     { label: "В работе", value: String(data.boxes.filter((box) => box.status !== "Выдано").length), delta: `${data.boxes.length} всего`, tone: "neutral" },
@@ -283,8 +313,16 @@ export default function Home() {
     setActionMode(mode);
     setNotice("");
     setError("");
-    if (mode === "issue" || mode === "move" || mode === "payment" || mode === "problem") {
-      if (selectedBox) setForm((current) => ({ ...current, track: selectedBox.track, code: selectedBox.code || "", shipmentBoxes: selectedBox.id }));
+    if (mode === "issue" || mode === "move" || mode === "payment" || mode === "problem" || mode === "status") {
+      if (selectedBox) {
+        setForm((current) => ({
+          ...current,
+          track: selectedBox.track,
+          code: selectedBox.code || "",
+          shipmentBoxes: selectedBox.id,
+          nextStatus: selectedBox.status === "Выдано" ? "Выдано" : current.nextStatus,
+        }));
+      }
     }
   }
 
@@ -320,6 +358,11 @@ export default function Home() {
 
     if (actionMode === "issue") {
       await runApi(window.cflowData.issueBox({ boxId, user }), "Коробка выдана клиенту");
+      return;
+    }
+
+    if (actionMode === "status") {
+      await runApi(window.cflowData.updateStatus({ boxId, status: form.nextStatus, user }), "Статус коробки обновлен");
       return;
     }
 
@@ -515,6 +558,7 @@ export default function Home() {
                 <button className={actionMode === "client" ? "primary" : ""} type="button" onClick={() => setAction("client")}>Добавить клиента</button>
                 <button className={actionMode === "issue" ? "primary" : ""} type="button" onClick={() => setAction("issue")}>Выдать товар</button>
                 <button className={actionMode === "move" ? "primary" : ""} type="button" onClick={() => setAction("move")}>Переместить</button>
+                <button className={actionMode === "status" ? "primary" : ""} type="button" onClick={() => setAction("status")}>Статус</button>
                 <button className={actionMode === "shipment" ? "primary" : ""} type="button" onClick={() => setAction("shipment")}>Создать отправку</button>
                 {showFinance ? <button className={actionMode === "payment" ? "primary" : ""} type="button" onClick={() => setAction("payment")}>Принять оплату</button> : null}
               </div>
@@ -594,6 +638,7 @@ export default function Home() {
             box={modalBox}
             client={modalClient}
             clientBoxes={modalClientBoxes}
+            boxActivity={modalBoxActivity}
             showFinance={showFinance}
             onClose={() => setDetailModal(null)}
             onOpenBox={(id) => {
@@ -617,6 +662,7 @@ function actionTitle(mode: ActionMode) {
     shipment: "Создание отправки",
     payment: "Прием оплаты",
     problem: "Проблемная коробка",
+    status: "Обновление статуса",
   };
   return titles[mode];
 }
@@ -656,6 +702,20 @@ function ActionForm({
       <form className="action-form action-form-inline" onSubmit={onSubmit}>
         <label>Новое место<input value={form.place} onChange={(event) => update("place", event.target.value)} placeholder="A-04 / S2 / P3" /></label>
         <button className="primary" type="submit" disabled={!selectedBox}>Сохранить место</button>
+      </form>
+    );
+  }
+
+  if (mode === "status") {
+    return (
+      <form className="action-form action-form-inline" onSubmit={onSubmit}>
+        <label>
+          Новый статус
+          <select value={form.nextStatus} onChange={(event) => update("nextStatus", event.target.value)}>
+            {boxStatuses.map((status) => <option value={status} key={status}>{status}</option>)}
+          </select>
+        </label>
+        <button className="primary" type="submit" disabled={!selectedBox}>Обновить статус</button>
       </form>
     );
   }
@@ -708,7 +768,7 @@ function ActionForm({
     <form className="action-form action-form-grid" onSubmit={onSubmit}>
       <label>Трек / QR<input ref={trackRef} value={form.track} onChange={(event) => update("track", event.target.value)} placeholder="YT938475120CN" /></label>
       <label>Код<input value={form.code} onChange={(event) => update("code", event.target.value)} placeholder="Код клиента / маркировка" /></label>
-      <label>Клиент<input value={form.client} onChange={(event) => update("client", event.target.value)} placeholder="Имя клиента" /></label>
+      <label>Клиент<input value={form.client} onChange={(event) => update("client", event.target.value)} placeholder="Можно оставить пустым, если клиент неизвестен" /></label>
       <label>Телефон<input value={form.phone} onChange={(event) => update("phone", event.target.value)} placeholder="+7..." /></label>
       <label>Вес<input value={form.weight} onChange={(event) => update("weight", event.target.value)} placeholder="8.4" /></label>
       <label>Размеры<input value={form.dimensions} onChange={(event) => update("dimensions", event.target.value)} placeholder="42x35x28" /></label>
@@ -833,6 +893,7 @@ function DetailModal({
   box,
   client,
   clientBoxes,
+  boxActivity,
   showFinance,
   onClose,
   onOpenBox,
@@ -841,6 +902,7 @@ function DetailModal({
   box?: BoxItem;
   client?: ClientItem;
   clientBoxes: BoxItem[];
+  boxActivity: ActivityItem[];
   showFinance: boolean;
   onClose: () => void;
   onOpenBox: (id: string) => void;
@@ -879,6 +941,7 @@ function DetailModal({
               <div><dt>Место</dt><dd>{box.place}</dd></div>
               <div><dt>Вес</dt><dd>{box.weight}</dd></div>
               <div><dt>Размеры</dt><dd>{box.dimensions || "Не указаны"}</dd></div>
+              <div><dt>Расчетный вес</dt><dd>{chargeableWeight(box) ? `${chargeableWeight(box)} кг` : "Не рассчитан"}</dd></div>
               <div><dt>Маршрут</dt><dd>{box.route}</dd></div>
               <div><dt>Оплата</dt><dd>{showFinance ? `${box.payment}${box.amount ? ` · ${money(box.amount)}` : ""}` : "Скрыто"}</dd></div>
               <div><dt>Ответственный</dt><dd>{box.owner}</dd></div>
@@ -890,6 +953,23 @@ function DetailModal({
                 <p>Удаление полностью уберет коробку из базы и отправок.</p>
               </div>
               <button className="danger-button" type="button" onClick={() => onDeleteBox(box.id)}>Удалить коробку</button>
+            </div>
+            <div className="modal-section">
+              <div className="panel-head compact">
+                <h2>История коробки</h2>
+                <span className="counter">{boxActivity.length} событий</span>
+              </div>
+              <div className="activity modal-activity">
+                {boxActivity.slice(0, 8).map((item) => (
+                  <div key={item.id}>
+                    <time>{item.displayTime || item.time.slice(11, 16)}</time>
+                    <strong>{item.title}</strong>
+                    <p>{item.text}</p>
+                    <span>{item.user}</span>
+                  </div>
+                ))}
+                {!boxActivity.length ? <p className="empty-state">История по этой коробке пока пустая</p> : null}
+              </div>
             </div>
           </>
         ) : null}

@@ -225,13 +225,14 @@ function writeStore(app, data) {
   fs.writeFileSync(storePath(app), JSON.stringify(data, null, 2), "utf8");
 }
 
-function logActivity(data, title, text, user) {
+function logActivity(data, title, text, user, boxId = "") {
   data.activity.unshift({
     id: makeId("ACT", data.activity.length),
     time: nowIso(),
     title,
     text,
     user: user || "CFlow",
+    boxId,
   });
   data.activity = data.activity.slice(0, 80);
 }
@@ -284,8 +285,8 @@ function receiveBox(app, input) {
   const phone = String(input.phone || "").trim();
   const weight = String(input.weight || "").trim();
 
-  if (!track || !clientName || !weight) {
-    return { ok: false, error: "Укажите трек, клиента и вес" };
+  if (!track || !weight) {
+    return { ok: false, error: "Укажите трек и вес" };
   }
 
   if (data.boxes.some((box) => box.track.toLowerCase() === track.toLowerCase())) {
@@ -296,17 +297,17 @@ function receiveBox(app, input) {
     return { ok: false, error: "Коробка с таким кодом уже есть" };
   }
 
-  const client = upsertClient(data, { ...input, client: clientName, phone });
+  const client = clientName ? upsertClient(data, { ...input, client: clientName, phone }) : null;
   const id = makeId("CF", data.boxes.length);
-  const status = "На складе";
+  const status = client ? "На складе" : "Без клиента";
   const place = String(input.place || "Зона приемки").trim();
   const box = {
     id,
     track,
     code,
-    clientId: client.id,
-    client: client.name,
-    phone: client.phone || phone,
+    clientId: client?.id || "",
+    client: client?.name || "Без клиента",
+    phone: client?.phone || phone,
     status,
     place,
     weight: weight.endsWith("кг") ? weight : `${weight} кг`,
@@ -330,7 +331,7 @@ function receiveBox(app, input) {
       data.finances.debt = Number(data.finances.debt || 0) + box.amount;
     }
   }
-  logActivity(data, "Приемка", `${box.id} принята и размещена: ${place}`, box.owner);
+  logActivity(data, "Приемка", `${box.id} принята и размещена: ${place}`, box.owner, box.id);
   writeStore(app, data);
   return publicSnapshot(app);
 }
@@ -345,7 +346,7 @@ function updateBox(app, boxId, patch, title, user) {
     ...patch,
     updatedAt: nowIso(),
   };
-  logActivity(data, title, `${boxId}: ${Object.values(patch).filter(Boolean).join(", ")}`, user);
+  logActivity(data, title, `${boxId}: ${Object.values(patch).filter(Boolean).join(", ")}`, user, boxId);
   writeStore(app, data);
   return publicSnapshot(app);
 }
@@ -374,11 +375,20 @@ function setProblem(app, input) {
   return updateBox(app, boxId, { status: "Проблема", comment, place: "Зона проверки", owner: input.user || "Оператор" }, "Проблема", input.user);
 }
 
+function updateStatus(app, input) {
+  const boxId = String(input.boxId || "").trim();
+  const status = String(input.status || "").trim();
+  const allowedStatuses = new Set(["Принято", "На складе", "В отправке", "В пути", "На таможне", "Прибыло", "Ждет выдачи", "Выдано", "Без клиента", "Проблема", "Задержано", "Повреждено", "Возврат", "Потеряно"]);
+  if (!boxId) return { ok: false, error: "Выберите коробку" };
+  if (!allowedStatuses.has(status)) return { ok: false, error: "Выберите корректный статус" };
+  return updateBox(app, boxId, { status, owner: input.user || "Оператор" }, "Статус", input.user);
+}
+
 function createClient(app, input) {
   const data = readStore(app);
   try {
     const client = upsertClient(data, input);
-    logActivity(data, "Клиент", `Создан или обновлен клиент ${client.name}`, input.user || "Оператор");
+  logActivity(data, "Клиент", `Создан или обновлен клиент ${client.name}`, input.user || "Оператор");
     writeStore(app, data);
     return publicSnapshot(app);
   } catch (error) {
@@ -416,7 +426,7 @@ function createShipment(app, input) {
   data.boxes = data.boxes.map((box) =>
     selectedBoxes.includes(box.id) ? { ...box, status: "В отправке", place: `${type} ${title}`, updatedAt: nowIso() } : box,
   );
-  logActivity(data, "Отправка", `${type} ${title}: ${selectedBoxes.length} коробок`, input.user || "Оператор");
+  selectedBoxes.forEach((boxId) => logActivity(data, "Отправка", `${boxId}: добавлена в ${type} ${title}`, input.user || "Оператор", boxId));
   writeStore(app, data);
   return publicSnapshot(app);
 }
@@ -435,7 +445,7 @@ function recordPayment(app, input) {
   data.finances.incomeToday = Number(data.finances.incomeToday || 0) + amount;
   data.finances.debt = Math.max(0, Number(data.finances.debt || 0) - amount);
   data.finances.expectedToday = Math.max(0, Number(data.finances.expectedToday || 0) - amount);
-  logActivity(data, "Оплата", `${boxId}: принято ${amount} T`, input.user || "Оператор");
+  logActivity(data, "Оплата", `${boxId}: принято ${amount} T`, input.user || "Оператор", boxId);
   writeStore(app, data);
   return publicSnapshot(app);
 }
@@ -457,7 +467,7 @@ function deleteBox(app, input) {
       boxes: Array.isArray(shipment.boxes) ? shipment.boxes.filter((id) => id !== boxId) : [],
     }))
     .filter((shipment) => shipment.boxes.length > 0);
-  logActivity(data, "Удаление", `${boxId} удалена из базы. Причина: ${reason}`, input.user || "Оператор");
+  logActivity(data, "Удаление", `${boxId} удалена из базы. Причина: ${reason}`, input.user || "Оператор", boxId);
   writeStore(app, data);
   return publicSnapshot(app);
 }
@@ -467,6 +477,7 @@ function registerCflowIpc(ipcMain, app) {
   ipcMain.handle("cflow-data:receive-box", (_event, payload) => receiveBox(app, payload || {}));
   ipcMain.handle("cflow-data:move-box", (_event, payload) => moveBox(app, payload || {}));
   ipcMain.handle("cflow-data:issue-box", (_event, payload) => issueBox(app, payload || {}));
+  ipcMain.handle("cflow-data:update-status", (_event, payload) => updateStatus(app, payload || {}));
   ipcMain.handle("cflow-data:problem-box", (_event, payload) => setProblem(app, payload || {}));
   ipcMain.handle("cflow-data:create-client", (_event, payload) => createClient(app, payload || {}));
   ipcMain.handle("cflow-data:create-shipment", (_event, payload) => createShipment(app, payload || {}));

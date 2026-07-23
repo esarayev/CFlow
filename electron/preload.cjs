@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("cflowData", {
   receiveBox: (payload) => ipcRenderer.invoke("cflow-data:receive-box", payload),
   moveBox: (payload) => ipcRenderer.invoke("cflow-data:move-box", payload),
   issueBox: (payload) => ipcRenderer.invoke("cflow-data:issue-box", payload),
+  updateStatus: (payload) => ipcRenderer.invoke("cflow-data:update-status", payload),
   problemBox: (payload) => ipcRenderer.invoke("cflow-data:problem-box", payload),
   createClient: (payload) => ipcRenderer.invoke("cflow-data:create-client", payload),
   createShipment: (payload) => ipcRenderer.invoke("cflow-data:create-shipment", payload),

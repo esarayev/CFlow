@@ -111,13 +111,48 @@ function mergeClient(data, input) {
   return true;
 }
 
-async function pullCloudClients(data) {
-  const result = await cloudRequest("/api/admin/clients");
-  const clients = Array.isArray(result?.clients) ? result.clients : [];
+function newerOrEqual(nextTime, currentTime) {
+  const next = Date.parse(nextTime || "");
+  const current = Date.parse(currentTime || "");
+  if (!Number.isFinite(next)) return true;
+  if (!Number.isFinite(current)) return true;
+  return next >= current;
+}
+
+function mergeById(items, incoming) {
+  let changed = false;
+  const list = Array.isArray(incoming) ? incoming : [];
+  list.forEach((next) => {
+    const id = String(next?.id || "").trim();
+    if (!id) return;
+    const index = items.findIndex((item) => item.id === id);
+    if (index === -1) {
+      items.unshift(next);
+      changed = true;
+      return;
+    }
+    if (newerOrEqual(next.updatedAt || next.time, items[index].updatedAt || items[index].time)) {
+      items[index] = { ...items[index], ...next };
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+async function pullCloudSnapshot(data) {
+  const result = await cloudRequest("/api/admin/snapshot");
+  const snapshot = result?.data || {};
+  const clients = Array.isArray(snapshot.clients) ? snapshot.clients : [];
   let changed = false;
   clients.forEach((client) => {
     changed = mergeClient(data, client) || changed;
   });
+  changed = mergeById(data.boxes, snapshot.boxes) || changed;
+  changed = mergeById(data.shipments, snapshot.shipments) || changed;
+  changed = mergeById(data.activity, snapshot.activity) || changed;
+  if (snapshot.finances && typeof snapshot.finances === "object") {
+    data.finances = { ...data.finances, ...snapshot.finances };
+  }
   return changed;
 }
 
@@ -137,6 +172,13 @@ async function pushCloudClients(data) {
       .filter((client) => String(client?.name || "").trim())
       .map((client) => pushCloudClient(client, client.registrationSource || "manual")),
   );
+}
+
+async function pushCloudSnapshot(data) {
+  await cloudRequest("/api/admin/snapshot/sync", {
+    method: "POST",
+    body: JSON.stringify({ data }),
+  });
 }
 
 function isPaidPayment(value) {
@@ -365,8 +407,9 @@ function logActivity(data, title, text, user, boxId = "") {
 
 async function publicSnapshot(app) {
   const data = readStore(app);
-  const changed = await pullCloudClients(data);
+  const changed = await pullCloudSnapshot(data);
   await pushCloudClients(data);
+  await pushCloudSnapshot(data);
   if (changed) writeStore(app, data);
   const warehouse = deriveWarehouse(data.boxes);
   return {
@@ -466,6 +509,7 @@ function receiveBox(app, input) {
     clientId: client?.id || "",
     client: client?.name || "Без клиента",
     phone: client?.phone || phone,
+    telegramId: client?.telegramId || "",
     status,
     place,
     weight: weight.endsWith("кг") ? weight : `${weight} кг`,
@@ -619,7 +663,7 @@ function recordPayment(app, input) {
   return publicSnapshot(app);
 }
 
-function deleteBox(app, input) {
+async function deleteBox(app, input) {
   const data = readStore(app);
   const boxId = String(input.boxId || "").trim();
   const reason = String(input.reason || "").trim();
@@ -638,6 +682,10 @@ function deleteBox(app, input) {
     .filter((shipment) => shipment.boxes.length > 0);
   logActivity(data, "Удаление", `${boxId} удалена из базы. Причина: ${reason}`, input.user || "Оператор", boxId);
   writeStore(app, data);
+  await cloudRequest("/api/admin/boxes/delete", {
+    method: "POST",
+    body: JSON.stringify({ boxId, reason }),
+  });
   return publicSnapshot(app);
 }
 

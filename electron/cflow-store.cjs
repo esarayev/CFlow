@@ -279,6 +279,7 @@ function upsertClient(data, input) {
 function receiveBox(app, input) {
   const data = readStore(app);
   const track = String(input.track || "").trim();
+  const code = String(input.code || "").trim();
   const clientName = String(input.client || "").trim();
   const phone = String(input.phone || "").trim();
   const weight = String(input.weight || "").trim();
@@ -291,6 +292,10 @@ function receiveBox(app, input) {
     return { ok: false, error: "Коробка с таким треком уже есть" };
   }
 
+  if (code && data.boxes.some((box) => String(box.code || "").toLowerCase() === code.toLowerCase())) {
+    return { ok: false, error: "Коробка с таким кодом уже есть" };
+  }
+
   const client = upsertClient(data, { ...input, client: clientName, phone });
   const id = makeId("CF", data.boxes.length);
   const status = "На складе";
@@ -298,6 +303,7 @@ function receiveBox(app, input) {
   const box = {
     id,
     track,
+    code,
     clientId: client.id,
     client: client.name,
     phone: client.phone || phone,
@@ -437,7 +443,9 @@ function recordPayment(app, input) {
 function deleteBox(app, input) {
   const data = readStore(app);
   const boxId = String(input.boxId || "").trim();
+  const reason = String(input.reason || "").trim();
   if (!boxId) return { ok: false, error: "Выберите коробку" };
+  if (!reason) return { ok: false, error: "Укажите причину удаления" };
 
   const box = data.boxes.find((item) => item.id === boxId);
   if (!box) return { ok: false, error: "Коробка не найдена" };
@@ -449,7 +457,7 @@ function deleteBox(app, input) {
       boxes: Array.isArray(shipment.boxes) ? shipment.boxes.filter((id) => id !== boxId) : [],
     }))
     .filter((shipment) => shipment.boxes.length > 0);
-  logActivity(data, "Удаление", `${boxId} удалена из базы`, input.user || "Оператор");
+  logActivity(data, "Удаление", `${boxId} удалена из базы. Причина: ${reason}`, input.user || "Оператор");
   writeStore(app, data);
   return publicSnapshot(app);
 }

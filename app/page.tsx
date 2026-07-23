@@ -15,6 +15,7 @@ type SessionUser = {
 type BoxItem = {
   id: string;
   track: string;
+  code?: string;
   clientId?: string;
   client: string;
   phone: string;
@@ -93,6 +94,7 @@ type DetailModalState = { type: "box"; id: string } | { type: "client"; id: stri
 
 type ActionFormState = {
   track: string;
+  code: string;
   client: string;
   phone: string;
   weight: string;
@@ -178,6 +180,7 @@ export default function Home() {
   const [loginError, setLoginError] = useState("");
   const [form, setForm] = useState({
     track: "",
+    code: "",
     client: "",
     phone: "",
     weight: "",
@@ -281,7 +284,7 @@ export default function Home() {
     setNotice("");
     setError("");
     if (mode === "issue" || mode === "move" || mode === "payment" || mode === "problem") {
-      if (selectedBox) setForm((current) => ({ ...current, track: selectedBox.track, shipmentBoxes: selectedBox.id }));
+      if (selectedBox) setForm((current) => ({ ...current, track: selectedBox.track, code: selectedBox.code || "", shipmentBoxes: selectedBox.id }));
     }
   }
 
@@ -309,7 +312,7 @@ export default function Home() {
     if (actionMode === "receive") {
       const result = await runApi(window.cflowData.receiveBox({ ...form, user }), "Коробка принята и сохранена");
       if (result.ok) {
-        setForm((current) => ({ ...current, track: "", client: "", phone: "", weight: "", dimensions: "", comment: "", amount: "" }));
+        setForm((current) => ({ ...current, track: "", code: "", client: "", phone: "", weight: "", dimensions: "", comment: "", amount: "" }));
         setTimeout(() => trackRef.current?.focus(), 0);
       }
       return;
@@ -369,11 +372,18 @@ export default function Home() {
       return;
     }
 
-    const confirmed = window.confirm(`Удалить коробку ${boxId} полностью из базы? Это действие нельзя отменить.`);
+    const reason = window.prompt(`Причина удаления коробки ${boxId}. Например: ошибочная приемка, дубль, неверный трек.`);
+    const cleanReason = reason?.trim();
+    if (!cleanReason) {
+      setError("Удаление отменено: нужна причина удаления");
+      return;
+    }
+
+    const confirmed = window.confirm(`Удалить коробку ${boxId} полностью из базы? Причина: ${cleanReason}. Это действие нельзя отменить.`);
     if (!confirmed) return;
 
     const result = await runApi(
-      window.cflowData.deleteBox({ boxId, user: currentUserName() }),
+      window.cflowData.deleteBox({ boxId, reason: cleanReason, user: currentUserName() }),
       "Коробка удалена из базы",
     );
     if (result.ok) {
@@ -561,6 +571,7 @@ export default function Home() {
               <dl className="details-list">
                 <div><dt>ID</dt><dd>{selectedBox.id}</dd></div>
                 <div><dt>Трек</dt><dd>{selectedBox.track}</dd></div>
+                <div><dt>Код</dt><dd>{selectedBox.code || "Не указан"}</dd></div>
                 <div><dt>Телефон</dt><dd>{selectedBox.phone}</dd></div>
                 <div><dt>Вес</dt><dd>{selectedBox.weight}</dd></div>
                 <div><dt>Размеры</dt><dd>{selectedBox.dimensions || "Не указаны"}</dd></div>
@@ -696,6 +707,7 @@ function ActionForm({
   return (
     <form className="action-form action-form-grid" onSubmit={onSubmit}>
       <label>Трек / QR<input ref={trackRef} value={form.track} onChange={(event) => update("track", event.target.value)} placeholder="YT938475120CN" /></label>
+      <label>Код<input value={form.code} onChange={(event) => update("code", event.target.value)} placeholder="Код клиента / маркировка" /></label>
       <label>Клиент<input value={form.client} onChange={(event) => update("client", event.target.value)} placeholder="Имя клиента" /></label>
       <label>Телефон<input value={form.phone} onChange={(event) => update("phone", event.target.value)} placeholder="+7..." /></label>
       <label>Вес<input value={form.weight} onChange={(event) => update("weight", event.target.value)} placeholder="8.4" /></label>
@@ -724,7 +736,7 @@ function BoxesPanel({ boxes, selectedId, onOpenBox }: { boxes: BoxItem[]; select
         {boxes.map((box) => (
           <button className={selectedId === box.id ? "box-row selected" : "box-row"} type="button" key={box.id} onClick={() => onOpenBox(box.id)}>
             <span className="box-id">{box.id}</span>
-            <span><strong>{box.client}</strong><small>{box.track} · {box.phone}</small></span>
+            <span><strong>{box.client}</strong><small>{box.track} · {box.code || "без кода"} · {box.phone}</small></span>
             <span className="hide-mobile">{box.place}</span>
             <span className={`status ${isProblem(box) ? "danger" : ""}`}>{box.status}</span>
           </button>
@@ -858,10 +870,11 @@ function DetailModal({
             <div className="modal-summary">
               <span className={`status ${isProblem(box) ? "danger" : ""}`}>{box.status}</span>
               <strong>{box.id}</strong>
-              <span>{box.track}</span>
+              <span>{box.code ? `${box.track} · ${box.code}` : box.track}</span>
             </div>
             <dl className="details-list modal-list">
               <div><dt>Клиент</dt><dd>{box.client}</dd></div>
+              <div><dt>Код</dt><dd>{box.code || "Не указан"}</dd></div>
               <div><dt>Телефон</dt><dd>{box.phone || "Не указан"}</dd></div>
               <div><dt>Место</dt><dd>{box.place}</dd></div>
               <div><dt>Вес</dt><dd>{box.weight}</dd></div>
@@ -899,7 +912,7 @@ function DetailModal({
                 {clientBoxes.map((item) => (
                   <button className="box-row modal-box-row" type="button" key={item.id} onClick={() => onOpenBox(item.id)}>
                     <span className="box-id">{item.id}</span>
-                    <span><strong>{item.track}</strong><small>{item.place}</small></span>
+                    <span><strong>{item.track}</strong><small>{item.code ? `${item.code} · ${item.place}` : item.place}</small></span>
                     <span className={`status ${isProblem(item) ? "danger" : ""}`}>{item.status}</span>
                   </button>
                 ))}

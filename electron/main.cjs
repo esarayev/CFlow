@@ -1,8 +1,10 @@
 const { app, BrowserWindow, shell, session } = require("electron");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
-const isDev = process.env.NODE_ENV !== "production";
-const appUrl = process.env.CFLOW_APP_URL || "http://localhost:3000";
+const isDev = !app.isPackaged;
+const packagedAppPath = path.join(app.getAppPath(), "out", "index.html");
+const appUrl = process.env.CFLOW_APP_URL || (isDev ? "http://localhost:3000" : pathToFileURL(packagedAppPath).toString());
 const allowedOrigins = new Set([
   "http://localhost:3000",
   "https://cflow-cargo.f7zp26dshq.chatgpt.site",
@@ -11,6 +13,9 @@ const allowedOrigins = new Set([
 function isAllowedUrl(targetUrl) {
   try {
     const parsed = new URL(targetUrl);
+    if (parsed.protocol === "file:") {
+      return true;
+    }
     return allowedOrigins.has(parsed.origin);
   } catch {
     return false;
@@ -26,6 +31,7 @@ function createWindow() {
     title: "CFlow",
     autoHideMenuBar: true,
     backgroundColor: "#f7f8fb",
+    icon: path.join(app.getAppPath(), "assets", "icon.ico"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
       contextIsolation: true,

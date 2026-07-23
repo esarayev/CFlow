@@ -1,6 +1,17 @@
 import type { NextConfig } from "next";
 
+const isDesktopExport = process.env.CFLOW_DESKTOP_EXPORT === "1";
+
 const nextConfig: NextConfig = {
+  ...(isDesktopExport
+    ? {
+        output: "export" as const,
+        assetPrefix: "./",
+        images: {
+          unoptimized: true,
+        },
+      }
+    : {}),
   async headers() {
     return [
       {

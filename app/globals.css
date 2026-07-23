@@ -846,6 +846,225 @@ h2 {
   font-size: 13px;
 }
 
+.client-app {
+  min-height: 100vh;
+  background: #f4f6fb;
+  color: var(--foreground);
+  padding: 16px;
+}
+
+.client-hero,
+.client-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.client-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 14px;
+  align-items: center;
+  padding: 18px;
+  background: linear-gradient(135deg, #ffffff 0%, #eef3fa 100%);
+}
+
+.client-hero span,
+.client-card span,
+.client-box span,
+.client-box small,
+.client-section-head span,
+.client-progress span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.client-hero h1 {
+  margin: 6px 0 8px;
+  font-size: 28px;
+}
+
+.client-hero p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.client-hero img {
+  width: 96px;
+  height: 64px;
+  object-fit: contain;
+}
+
+.client-notice {
+  margin: 12px 0 0;
+  border: 1px solid #c8d5ec;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 11px 12px;
+  font-size: 13px;
+}
+
+.client-error {
+  margin: 12px 0 0;
+  border: 1px solid #ffd0cb;
+  border-radius: 10px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  padding: 11px 12px;
+  font-size: 13px;
+}
+
+.client-stack,
+.client-form,
+.client-box-list {
+  display: grid;
+  gap: 12px;
+}
+
+.client-stack {
+  margin-top: 12px;
+}
+
+.client-card {
+  padding: 16px;
+}
+
+.client-form {
+  margin-top: 12px;
+}
+
+.client-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.client-form input {
+  min-height: 46px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0 12px;
+  outline: 0;
+}
+
+.client-status-card h2,
+.client-code-card strong,
+.client-section-head h2 {
+  margin: 0;
+}
+
+.client-pill {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 750;
+  padding: 7px 10px;
+}
+
+.client-pill.success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.client-status-card {
+  display: grid;
+  gap: 10px;
+}
+
+.client-status-card p,
+.client-code-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.client-code-card {
+  display: grid;
+  gap: 14px;
+}
+
+.client-code-card div {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  padding: 12px;
+}
+
+.client-code-card strong {
+  color: var(--accent);
+  font-size: 24px;
+}
+
+.client-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.client-box {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-soft);
+  padding: 12px;
+}
+
+.client-box strong,
+.client-box span,
+.client-box small {
+  display: block;
+}
+
+.client-box p {
+  margin: 0;
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.client-progress {
+  display: grid;
+  gap: 10px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.client-progress li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.client-progress i {
+  width: 12px;
+  height: 12px;
+  margin-top: 3px;
+  border: 2px solid var(--line-strong);
+  border-radius: 999px;
+  background: #ffffff;
+}
+
+.client-progress li.done i {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.client-progress strong {
+  display: block;
+  font-size: 13px;
+}
+
 .finance-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

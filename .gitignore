@@ -39,6 +39,7 @@ next-env.d.ts
 /dist/
 /.npm-cache/
 /release/
+/release-users/
 /.wrangler/
 /outputs/
 /work/

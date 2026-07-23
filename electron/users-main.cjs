@@ -4,20 +4,13 @@ const { pathToFileURL } = require("node:url");
 const { registerUserIpc } = require("./users-store.cjs");
 
 const isDev = !app.isPackaged;
-const packagedAppPath = path.join(app.getAppPath(), "out", "index.html");
-const appUrl = process.env.CFLOW_APP_URL || (isDev ? "http://localhost:3000" : pathToFileURL(packagedAppPath).toString());
-const allowedOrigins = new Set([
-  "http://localhost:3000",
-  "https://cflow-cargo.f7zp26dshq.chatgpt.site",
-]);
+const packagedAppPath = path.join(app.getAppPath(), "out", "users", "index.html");
+const appUrl = process.env.CFLOW_USERS_APP_URL || (isDev ? "http://localhost:3000/users" : pathToFileURL(packagedAppPath).toString());
 
 function isAllowedUrl(targetUrl) {
   try {
     const parsed = new URL(targetUrl);
-    if (parsed.protocol === "file:") {
-      return true;
-    }
-    return allowedOrigins.has(parsed.origin);
+    return parsed.protocol === "file:" || parsed.origin === "http://localhost:3000";
   } catch {
     return false;
   }
@@ -25,11 +18,11 @@ function isAllowedUrl(targetUrl) {
 
 function createWindow() {
   const mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 920,
-    minWidth: 1180,
-    minHeight: 760,
-    title: "CFlow",
+    width: 1120,
+    height: 780,
+    minWidth: 980,
+    minHeight: 680,
+    title: "CFlow Пользователи",
     autoHideMenuBar: true,
     backgroundColor: "#f7f8fb",
     icon: path.join(app.getAppPath(), "assets", "icon.ico"),
@@ -45,18 +38,13 @@ function createWindow() {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (isAllowedUrl(url)) {
-      return { action: "allow" };
-    }
-
+    if (isAllowedUrl(url)) return { action: "allow" };
     shell.openExternal(url).catch(() => undefined);
     return { action: "deny" };
   });
 
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (!isAllowedUrl(url)) {
-      event.preventDefault();
-    }
+    if (!isAllowedUrl(url)) event.preventDefault();
   });
 
   mainWindow.loadURL(appUrl);
@@ -70,18 +58,10 @@ app.whenReady().then(() => {
   });
 
   createWindow();
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
-  });
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  if (process.platform !== "darwin") app.quit();
 });
 
 app.on("certificate-error", (event, _webContents, _url, _error, _certificate, callback) => {

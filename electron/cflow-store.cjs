@@ -130,6 +130,15 @@ async function pushCloudClient(client, source = "manual") {
   });
 }
 
+async function pushCloudClients(data) {
+  if (!Array.isArray(data.clients) || !data.clients.length) return;
+  await Promise.all(
+    data.clients
+      .filter((client) => String(client?.name || "").trim())
+      .map((client) => pushCloudClient(client, client.registrationSource || "manual")),
+  );
+}
+
 function isPaidPayment(value) {
   const normalized = String(value || "").trim().toLowerCase();
   return normalized === "оплачено" || normalized === "paid";
@@ -357,6 +366,7 @@ function logActivity(data, title, text, user, boxId = "") {
 async function publicSnapshot(app) {
   const data = readStore(app);
   const changed = await pullCloudClients(data);
+  await pushCloudClients(data);
   if (changed) writeStore(app, data);
   const warehouse = deriveWarehouse(data.boxes);
   return {

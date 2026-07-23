@@ -33,6 +33,103 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function cloudConfig() {
+  return {
+    apiUrl: String(process.env.CFLOW_CLOUD_API_URL || process.env.CFLOW_API_URL || "https://es-logistics-client.f7zp26dshq.chatgpt.site").replace(/\/+$/, ""),
+    adminToken: String(process.env.CFLOW_ADMIN_TOKEN || ""),
+  };
+}
+
+async function cloudRequest(pathname, options = {}) {
+  const { apiUrl, adminToken } = cloudConfig();
+  if (!apiUrl || !adminToken || typeof fetch !== "function") return null;
+
+  try {
+    const response = await fetch(`${apiUrl}${pathname}`, {
+      ...options,
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${adminToken}`,
+        ...(options.headers || {}),
+      },
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function normalizeCloudClient(client) {
+  return {
+    id: String(client.id || "").trim(),
+    name: String(client.name || client.fullName || "").trim(),
+    phone: String(client.phone || "").trim(),
+    telegram: String(client.telegram || client.telegramUsername || "").trim(),
+    telegramId: String(client.telegramId || "").trim(),
+    comments: String(client.comments || client.comment || "").trim(),
+    clientCode: String(client.clientCode || client.code || "").trim(),
+    chinaAddress: String(client.chinaAddress || "").trim(),
+    clientRate: toNumber(client.clientRate || client.tariff),
+    chinaRate: toNumber(client.chinaRate),
+    registrationSource: String(client.registrationSource || "manual").trim(),
+    registrationStatus: String(client.registrationStatus || client.status || "approved").trim(),
+    createdAt: String(client.createdAt || nowIso()),
+    updatedAt: String(client.updatedAt || nowIso()),
+  };
+}
+
+function mergeClient(data, input) {
+  const next = normalizeCloudClient(input);
+  if (!next.name) return false;
+
+  const existing = data.clients.find((client) =>
+    (next.telegramId && client.telegramId === next.telegramId) ||
+    (next.phone && client.phone === next.phone) ||
+    (next.clientCode && client.clientCode === next.clientCode) ||
+    client.name.toLowerCase() === next.name.toLowerCase(),
+  );
+
+  if (existing) {
+    Object.assign(existing, {
+      ...existing,
+      ...next,
+      id: existing.id || next.id || makeId("CL", data.clients.length),
+      clientCode: next.clientCode || existing.clientCode || "",
+      chinaAddress: next.chinaAddress || existing.chinaAddress || "",
+      clientRate: next.clientRate || existing.clientRate || 0,
+      chinaRate: next.chinaRate || existing.chinaRate || 0,
+      comments: next.comments || existing.comments || "",
+    });
+    return true;
+  }
+
+  data.clients.unshift({
+    ...next,
+    id: next.id || makeId("CL", data.clients.length),
+  });
+  return true;
+}
+
+async function pullCloudClients(data) {
+  const result = await cloudRequest("/api/admin/clients");
+  const clients = Array.isArray(result?.clients) ? result.clients : [];
+  let changed = false;
+  clients.forEach((client) => {
+    changed = mergeClient(data, client) || changed;
+  });
+  return changed;
+}
+
+async function pushCloudClient(client, source = "manual") {
+  const normalized = normalizeCloudClient({ ...client, registrationSource: source });
+  if (!normalized.name) return;
+  await cloudRequest("/api/admin/clients/upsert", {
+    method: "POST",
+    body: JSON.stringify(normalized),
+  });
+}
+
 function isPaidPayment(value) {
   const normalized = String(value || "").trim().toLowerCase();
   return normalized === "оплачено" || normalized === "paid";
@@ -257,8 +354,10 @@ function logActivity(data, title, text, user, boxId = "") {
   data.activity = data.activity.slice(0, 80);
 }
 
-function publicSnapshot(app) {
+async function publicSnapshot(app) {
   const data = readStore(app);
+  const changed = await pullCloudClients(data);
+  if (changed) writeStore(app, data);
   const warehouse = deriveWarehouse(data.boxes);
   return {
     ok: true,
@@ -282,11 +381,15 @@ function upsertClient(data, input) {
     existing.name = name || existing.name;
     existing.phone = phone || existing.phone;
     existing.telegram = String(input.telegram || existing.telegram || "").trim();
+    existing.telegramId = String(input.telegramId || existing.telegramId || "").trim();
     existing.comments = String(input.comments || input.comment || existing.comments || "").trim();
     existing.clientCode = String(input.clientCode || existing.clientCode || "").trim();
     existing.chinaAddress = String(input.chinaAddress || existing.chinaAddress || "").trim();
     existing.clientRate = toNumber(input.clientRate) || existing.clientRate || 0;
     existing.chinaRate = toNumber(input.chinaRate) || existing.chinaRate || 0;
+    existing.registrationSource = String(input.registrationSource || existing.registrationSource || "manual").trim();
+    existing.registrationStatus = String(input.registrationStatus || existing.registrationStatus || "approved").trim();
+    existing.updatedAt = nowIso();
     return existing;
   }
 
@@ -295,11 +398,16 @@ function upsertClient(data, input) {
     name,
     phone,
     telegram: String(input.telegram || "").trim(),
+    telegramId: String(input.telegramId || "").trim(),
     comments: String(input.comments || input.comment || "").trim(),
     clientCode: String(input.clientCode || "").trim(),
     chinaAddress: String(input.chinaAddress || "").trim(),
     clientRate: toNumber(input.clientRate),
     chinaRate: toNumber(input.chinaRate),
+    registrationSource: String(input.registrationSource || "manual").trim(),
+    registrationStatus: String(input.registrationStatus || "approved").trim(),
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
   };
   data.clients.unshift(client);
   return client;
@@ -434,12 +542,13 @@ function updateStatus(app, input) {
   return updateBox(app, boxId, { status, owner: input.user || "Оператор" }, "Статус", input.user);
 }
 
-function createClient(app, input) {
+async function createClient(app, input) {
   const data = readStore(app);
   try {
     const client = upsertClient(data, input);
-  logActivity(data, "Клиент", `Создан или обновлен клиент ${client.name}`, input.user || "Оператор");
+    logActivity(data, "Клиент", `Создан или обновлен клиент ${client.name}`, input.user || "Оператор");
     writeStore(app, data);
+    await pushCloudClient(client, "manual");
     return publicSnapshot(app);
   } catch (error) {
     return { ok: false, error: error.message };

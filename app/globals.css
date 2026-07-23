@@ -70,6 +70,17 @@ button {
   gap: 12px;
 }
 
+.brand-logo {
+  display: block;
+  width: 126px;
+  height: 46px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: #050505;
+  object-fit: contain;
+  padding: 6px 8px;
+}
+
 .brand-mark {
   display: grid;
   width: 42px;
@@ -826,6 +837,12 @@ h2 {
     display: none;
   }
 
+  .brand-logo {
+    width: 56px;
+    padding: 7px;
+    object-position: left center;
+  }
+
   .nav-list button {
     justify-content: center;
     padding: 0;
@@ -922,6 +939,10 @@ h2 {
   .brand div:last-child,
   .search span {
     display: none;
+  }
+
+  .brand-logo {
+    width: 58px;
   }
 
   .metrics-grid,

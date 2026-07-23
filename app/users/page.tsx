@@ -157,7 +157,7 @@ export default function UsersApp() {
       <main className="auth-shell">
         <section className="auth-panel users-auth" aria-label="Вход в CFlow Пользователи">
           <div className="brand auth-brand">
-            <div className="brand-mark">CF</div>
+            <img className="brand-logo" src="./cflow-logo-full.png" alt="CFlow" />
             <div>
               <strong>CFlow Пользователи</strong>
               <span>отдельное приложение управления доступами</span>
@@ -191,7 +191,7 @@ export default function UsersApp() {
     <main className="users-admin-shell">
       <section className="users-admin-head">
         <div className="brand">
-          <div className="brand-mark">CF</div>
+          <img className="brand-logo" src="./cflow-logo-full.png" alt="CFlow" />
           <div>
             <strong>CFlow Пользователи</strong>
             <span>кабинет сотрудников и ролей</span>

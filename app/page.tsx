@@ -139,7 +139,7 @@ export default function Home() {
       <main className="auth-shell">
         <section className="auth-panel" aria-label="Вход в CFlow">
           <div className="brand auth-brand">
-            <div className="brand-mark">CF</div>
+            <img className="brand-logo" src="./cflow-logo-full.png" alt="CFlow" />
             <div>
               <strong>CFlow</strong>
               <span>рабочий кабинет карго-точки</span>
@@ -174,7 +174,7 @@ export default function Home() {
     <main className="shell">
       <aside className="sidebar" aria-label="Основная навигация">
         <div className="brand">
-          <div className="brand-mark">CF</div>
+          <img className="brand-logo" src="./cflow-logo-full.png" alt="CFlow" />
           <div>
             <strong>CFlow</strong>
             <span>{sessionUser.role}</span>

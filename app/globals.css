@@ -652,6 +652,121 @@ h2 {
   font-size: 13px;
 }
 
+.app-notice,
+.app-error,
+.empty-state {
+  margin: 0 0 12px;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.app-notice {
+  border: 1px solid #b7e4cc;
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.app-error {
+  border: 1px solid #ffd0cb;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.empty-state {
+  border: 1px dashed var(--line-strong);
+  background: var(--panel-soft);
+  color: var(--muted);
+}
+
+.action-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.action-form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.action-form-inline {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.action-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.action-form input {
+  min-height: 42px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--foreground);
+  padding: 0 12px;
+  outline: 0;
+}
+
+.action-form button {
+  align-self: end;
+}
+
+.entity-list {
+  display: grid;
+  gap: 8px;
+}
+
+.entity-row {
+  display: grid;
+  grid-template-columns: 110px minmax(180px, 1fr) minmax(140px, 0.8fr) minmax(120px, 0.7fr);
+  gap: 12px;
+  align-items: center;
+  min-height: 56px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 11px 12px;
+}
+
+.entity-row span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.finance-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.finance-grid div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 16px;
+}
+
+.finance-grid span,
+.finance-grid strong {
+  display: block;
+}
+
+.finance-grid span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.finance-grid strong {
+  margin-top: 8px;
+  font-size: 22px;
+}
+
 .users-admin-shell {
   display: grid;
   gap: 18px;
@@ -785,9 +900,12 @@ h2 {
   .topbar,
   .operation-board,
   .auth-form,
+  .action-form-grid,
+  .action-form-inline,
   .user-grid,
   .role-grid,
-  .split-panels {
+  .split-panels,
+  .finance-grid {
     grid-template-columns: 1fr;
   }
 
@@ -828,6 +946,7 @@ h2 {
   }
 
   .box-row,
+  .entity-row,
   .details-list div {
     grid-template-columns: 1fr;
   }

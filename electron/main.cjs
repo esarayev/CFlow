@@ -1,6 +1,7 @@
 const { app, BrowserWindow, shell, ipcMain, session } = require("electron");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+const { registerCflowIpc } = require("./cflow-store.cjs");
 const { registerUserIpc } = require("./users-store.cjs");
 
 const isDev = !app.isPackaged;
@@ -63,6 +64,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  registerCflowIpc(ipcMain, app);
   registerUserIpc(ipcMain, app);
 
   session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {

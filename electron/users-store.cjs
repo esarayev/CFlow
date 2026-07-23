@@ -23,7 +23,7 @@ function storePath(app) {
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
-  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  const hash = crypto.scryptSync(String(password || ""), salt, 64).toString("hex");
   return `${salt}:${hash}`;
 }
 
@@ -38,39 +38,67 @@ function verifyPassword(password, passwordHash) {
   return crypto.timingSafeEqual(expectedBuffer, actual);
 }
 
+function normalizeRole(role) {
+  const value = String(role || "").trim();
+  const map = new Map([
+    ["Руководитель", "Руководитель"],
+    ["Администратор", "Руководитель"],
+    ["Менеджер", "Менеджер"],
+    ["Кладовщик", "Кладовщик"],
+    ["Финансы", "Финансы"],
+    ["Оператор", "Оператор"],
+    ["Р СѓРєРѕРІРѕРґРёС‚РµР»СЊ", "Руководитель"],
+    ["РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ", "Руководитель"],
+    ["РњРµРЅРµРґР¶РµСЂ", "Менеджер"],
+    ["РљР»Р°РґРѕРІС‰РёРє", "Кладовщик"],
+    ["Р¤РёРЅР°РЅСЃС‹", "Финансы"],
+    ["РћРїРµСЂР°С‚РѕСЂ", "Оператор"],
+  ]);
+  return map.get(value) || "Менеджер";
+}
+
 function rolePermissions(role) {
-  if (role === "Руководитель") return ["all"];
-  if (role === "Администратор") return ["users", "boxes", "warehouse", "shipments", "finance"];
-  if (role === "Менеджер") return ["receive_box", "issue_box", "search", "clients", "warehouse"];
-  if (role === "Кладовщик") return ["receive_box", "move_box", "issue_box", "warehouse"];
-  if (role === "Финансы") return ["finance", "reports", "search"];
+  const normalizedRole = normalizeRole(role);
+  if (normalizedRole === "Руководитель") return ["all"];
+  if (normalizedRole === "Менеджер") return ["receive_box", "issue_box", "search", "clients", "warehouse"];
+  if (normalizedRole === "Кладовщик") return ["receive_box", "move_box", "issue_box", "warehouse"];
+  if (normalizedRole === "Финансы") return ["finance", "reports", "search"];
   return ["receive_box", "issue_box", "search"];
 }
 
 function normalizeStatus(status) {
-  if (!status) return "active";
-  if (status === "active" || status === "disabled") return status;
-  if (status === "Активен" || status === "РђРєС‚РёРІРµРЅ") return "active";
-  if (status === "Отключен" || status === "РћС‚РєР»СЋС‡РµРЅ") return "disabled";
+  const value = String(status || "").trim();
+  if (!value) return "active";
+  if (value === "active" || value === "disabled") return value;
+  if (value === "Активен" || value === "РђРєС‚РёРІРµРЅ") return "active";
+  if (value === "Отключен" || value === "РћС‚РєР»СЋС‡РµРЅ") return "disabled";
   return "active";
+}
+
+function normalizeName(user) {
+  const name = String(user.name || "").trim();
+  if (!name || name === "Ержан Сараев" || name === "Р•СЂР¶Р°РЅ РЎР°СЂР°РµРІ" || name === "РђРґРјРёРЅРёСЃС‚СЂР°С‚РѕСЂ") {
+    return "Администратор";
+  }
+  return name;
 }
 
 function normalizeUser(user) {
   const normalized = { ...user };
+  normalized.status = normalizeStatus(normalized.status);
+  normalized.role = normalizeRole(normalized.role);
 
   if (normalized.username === ownerUsername) {
     normalized.id = ownerUser.id;
-    normalized.name = normalized.name && normalized.name !== "Ержан Сараев" && normalized.name !== "Р•СЂР¶Р°РЅ РЎР°СЂР°РµРІ"
-      ? normalized.name
-      : ownerUser.name;
+    normalized.name = normalizeName(normalized);
     normalized.role = ownerUser.role;
     normalized.permissions = ownerUser.permissions;
     normalized.status = "active";
   }
 
-  normalized.status = normalizeStatus(normalized.status);
-  if (!Array.isArray(normalized.permissions)) normalized.permissions = rolePermissions(normalized.role);
-  if (!normalized.role) normalized.role = "Менеджер";
+  if (!Array.isArray(normalized.permissions) || normalized.permissions.length === 0) {
+    normalized.permissions = rolePermissions(normalized.role);
+  }
 
   return normalized;
 }
@@ -145,7 +173,7 @@ function createUser(app, input) {
   const username = String(input.username || "").trim();
   const name = String(input.name || "").trim();
   const password = String(input.password || "");
-  const role = String(input.role || "Менеджер");
+  const role = normalizeRole(input.role);
 
   if (!name || !username || password.length < 6) {
     return { ok: false, error: "Укажите имя, логин и пароль минимум 6 символов" };
@@ -183,7 +211,7 @@ function updateUser(app, input) {
   const isOwner = current.username === ownerUsername;
   const name = String(input.name || "").trim();
   const username = isOwner ? current.username : String(input.username || "").trim();
-  const role = isOwner ? ownerUser.role : String(input.role || current.role);
+  const role = isOwner ? ownerUser.role : normalizeRole(input.role || current.role);
   const password = String(input.password || "");
 
   if (!name || !username) {

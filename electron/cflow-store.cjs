@@ -38,6 +38,23 @@ function isPaidPayment(value) {
   return normalized === "оплачено" || normalized === "paid";
 }
 
+function numericWeight(value) {
+  return toNumber(value);
+}
+
+function volumeWeight(dimensions) {
+  const parts = String(dimensions || "")
+    .split(/[xх*×]/i)
+    .map((part) => toNumber(part))
+    .filter((part) => part > 0);
+  if (parts.length !== 3) return 0;
+  return Math.round((parts[0] * parts[1] * parts[2] / 5000) * 10) / 10;
+}
+
+function chargeableWeight(weight, dimensions) {
+  return Math.max(numericWeight(weight), volumeWeight(dimensions));
+}
+
 function emptyStore() {
   return {
     boxes: [],
@@ -49,6 +66,9 @@ function emptyStore() {
       expectedToday: 0,
       expensesToday: 0,
       debt: 0,
+      costToday: 0,
+      chargedToday: 0,
+      profitToday: 0,
     },
     activity: [],
   };
@@ -216,7 +236,7 @@ function readStore(app) {
     warehouse: Array.isArray(data.warehouse) ? data.warehouse : [],
     shipments: Array.isArray(data.shipments) ? data.shipments : [],
     activity: Array.isArray(data.activity) ? data.activity : [],
-    finances: data.finances || defaults.finances,
+    finances: { ...defaults.finances, ...(data.finances || {}) },
   };
 }
 
@@ -263,6 +283,10 @@ function upsertClient(data, input) {
     existing.phone = phone || existing.phone;
     existing.telegram = String(input.telegram || existing.telegram || "").trim();
     existing.comments = String(input.comments || input.comment || existing.comments || "").trim();
+    existing.clientCode = String(input.clientCode || existing.clientCode || "").trim();
+    existing.chinaAddress = String(input.chinaAddress || existing.chinaAddress || "").trim();
+    existing.clientRate = toNumber(input.clientRate) || existing.clientRate || 0;
+    existing.chinaRate = toNumber(input.chinaRate) || existing.chinaRate || 0;
     return existing;
   }
 
@@ -272,6 +296,10 @@ function upsertClient(data, input) {
     phone,
     telegram: String(input.telegram || "").trim(),
     comments: String(input.comments || input.comment || "").trim(),
+    clientCode: String(input.clientCode || "").trim(),
+    chinaAddress: String(input.chinaAddress || "").trim(),
+    clientRate: toNumber(input.clientRate),
+    chinaRate: toNumber(input.chinaRate),
   };
   data.clients.unshift(client);
   return client;
@@ -281,9 +309,14 @@ function receiveBox(app, input) {
   const data = readStore(app);
   const track = String(input.track || "").trim();
   const code = String(input.code || "").trim();
-  const clientName = String(input.client || "").trim();
+  const inputClientCode = String(input.clientCode || "").trim();
+  const matchedClient = inputClientCode
+    ? data.clients.find((client) => String(client.clientCode || "").toLowerCase() === inputClientCode.toLowerCase())
+    : null;
+  const clientName = String(input.client || matchedClient?.name || "").trim();
   const phone = String(input.phone || "").trim();
   const weight = String(input.weight || "").trim();
+  const dimensions = String(input.dimensions || "").trim();
 
   if (!track || !weight) {
     return { ok: false, error: "Укажите трек и вес" };
@@ -297,24 +330,37 @@ function receiveBox(app, input) {
     return { ok: false, error: "Коробка с таким кодом уже есть" };
   }
 
-  const client = clientName ? upsertClient(data, { ...input, client: clientName, phone }) : null;
+  const client = clientName ? upsertClient(data, { ...input, client: clientName, phone: phone || matchedClient?.phone || "" }) : null;
   const id = makeId("CF", data.boxes.length);
   const status = client ? "На складе" : "Без клиента";
   const place = String(input.place || "Зона приемки").trim();
+  const clientRate = toNumber(input.clientRate) || client?.clientRate || 0;
+  const chinaRate = toNumber(input.chinaRate) || client?.chinaRate || 0;
+  const billableWeight = chargeableWeight(weight, dimensions);
+  const costAmount = Math.round(billableWeight * chinaRate);
+  const chargeAmount = Math.round(billableWeight * clientRate) || toNumber(input.amount);
+  const profitAmount = chargeAmount - costAmount;
   const box = {
     id,
     track,
     code,
+    clientCode: client?.clientCode || inputClientCode,
     clientId: client?.id || "",
     client: client?.name || "Без клиента",
     phone: client?.phone || phone,
     status,
     place,
     weight: weight.endsWith("кг") ? weight : `${weight} кг`,
-    dimensions: String(input.dimensions || "").trim(),
+    dimensions,
     route: String(input.route || "Китай -> Казахстан").trim(),
     payment: String(input.payment || "Не оплачено").trim(),
-    amount: toNumber(input.amount),
+    amount: chargeAmount,
+    batch: String(input.batch || "").trim(),
+    chinaRate,
+    clientRate,
+    costAmount,
+    chargeAmount,
+    profitAmount,
     photo: String(input.photo || "").trim(),
     comment: String(input.comment || "").trim(),
     owner: String(input.user || "Оператор").trim(),
@@ -323,6 +369,10 @@ function receiveBox(app, input) {
   };
 
   data.boxes.unshift(box);
+  data.finances.costToday = Number(data.finances.costToday || 0) + costAmount;
+  data.finances.expensesToday = Number(data.finances.expensesToday || 0) + costAmount;
+  data.finances.chargedToday = Number(data.finances.chargedToday || 0) + chargeAmount;
+  data.finances.profitToday = Number(data.finances.profitToday || 0) + profitAmount;
   if (box.amount > 0) {
     if (isPaidPayment(box.payment)) {
       data.finances.incomeToday = Number(data.finances.incomeToday || 0) + box.amount;

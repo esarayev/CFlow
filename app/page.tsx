@@ -16,6 +16,7 @@ type BoxItem = {
   id: string;
   track: string;
   code?: string;
+  clientCode?: string;
   clientId?: string;
   client: string;
   phone: string;
@@ -26,6 +27,12 @@ type BoxItem = {
   route: string;
   payment: string;
   amount?: number;
+  batch?: string;
+  chinaRate?: number;
+  clientRate?: number;
+  costAmount?: number;
+  chargeAmount?: number;
+  profitAmount?: number;
   photo?: string;
   comment?: string;
   createdAt?: string;
@@ -39,6 +46,10 @@ type ClientItem = {
   phone: string;
   telegram?: string;
   comments?: string;
+  clientCode?: string;
+  chinaAddress?: string;
+  clientRate?: number;
+  chinaRate?: number;
 };
 
 type ActivityItem = {
@@ -73,6 +84,9 @@ type FinanceData = {
   expectedToday: number;
   expensesToday: number;
   debt: number;
+  costToday?: number;
+  chargedToday?: number;
+  profitToday?: number;
 };
 
 type CflowData = {
@@ -106,6 +120,11 @@ type ActionFormState = {
   amount: string;
   comment: string;
   telegram: string;
+  clientCode: string;
+  chinaAddress: string;
+  clientRate: string;
+  chinaRate: string;
+  batch: string;
   shipmentTitle: string;
   shipmentType: string;
   shipmentRoute: string;
@@ -178,6 +197,28 @@ function chargeableWeight(box: BoxItem) {
   return Math.max(numericWeight(box.weight), volumeWeight(box.dimensions));
 }
 
+function clientInstruction(client: ClientItem) {
+  return [
+    `Здравствуйте, ${client.name}.`,
+    `Ваш клиентский код: ${client.clientCode || "будет выдан после подтверждения"}.`,
+    `Адрес склада в Китае: ${client.chinaAddress || "будет отправлен отдельно"}.`,
+    "Указывайте этот код при покупке, чтобы склад понял, чей это товар.",
+  ].join("\n");
+}
+
+function arrivalMessage(box: BoxItem) {
+  const weight = chargeableWeight(box) || numericWeight(box.weight);
+  const amount = box.chargeAmount || box.amount || 0;
+  return [
+    `Здравствуйте, ${box.client}. Ваш товар прибыл.`,
+    `Код клиента: ${box.clientCode || "не указан"}.`,
+    `Трек: ${box.track}.`,
+    `Вес: ${weight || box.weight} кг.`,
+    amount ? `К оплате: ${money(amount)}.` : "Сумма к оплате уточняется.",
+    "После оплаты можно забрать товар в карго.",
+  ].join("\n");
+}
+
 function isProblem(box: BoxItem) {
   return box.status === "Проблема";
 }
@@ -214,6 +255,11 @@ export default function Home() {
     amount: "",
     comment: "",
     telegram: "",
+    clientCode: "",
+    chinaAddress: "",
+    clientRate: "",
+    chinaRate: "",
+    batch: "",
     shipmentTitle: "",
     shipmentType: "Контейнер",
     shipmentRoute: "Китай -> Казахстан",
@@ -264,7 +310,7 @@ export default function Home() {
   const modalClientBoxes = useMemo(() => {
     if (!modalClient) return [];
     return data.boxes.filter((box) =>
-      box.clientId === modalClient.id || box.phone === modalClient.phone || box.client === modalClient.name,
+      box.clientId === modalClient.id || box.clientCode === modalClient.clientCode || box.phone === modalClient.phone || box.client === modalClient.name,
     );
   }, [data.boxes, modalClient]);
   const modalBoxActivity = useMemo(() => {
@@ -273,6 +319,30 @@ export default function Home() {
       item.boxId === modalBox.id || item.text.includes(modalBox.id) || item.text.includes(modalBox.track) || Boolean(modalBox.code && item.text.includes(modalBox.code)),
     );
   }, [data.activity, modalBox]);
+
+  const matchedClient = useMemo(() => {
+    const code = form.clientCode.trim().toLowerCase();
+    const phone = form.phone.trim();
+    const name = form.client.trim().toLowerCase();
+    return data.clients.find((client) =>
+      (code && client.clientCode?.toLowerCase() === code) ||
+      (phone && client.phone === phone) ||
+      (name && client.name.toLowerCase() === name),
+    );
+  }, [data.clients, form.client, form.clientCode, form.phone]);
+
+  useEffect(() => {
+    if (!matchedClient || actionMode !== "receive") return;
+    setForm((current) => ({
+      ...current,
+      client: current.client || matchedClient.name,
+      phone: current.phone || matchedClient.phone,
+      clientCode: current.clientCode || matchedClient.clientCode || "",
+      chinaAddress: current.chinaAddress || matchedClient.chinaAddress || "",
+      clientRate: current.clientRate || String(matchedClient.clientRate || ""),
+      chinaRate: current.chinaRate || String(matchedClient.chinaRate || ""),
+    }));
+  }, [actionMode, matchedClient]);
 
   const metrics = [
     { label: "В работе", value: String(data.boxes.filter((box) => box.status !== "Выдано").length), delta: `${data.boxes.length} всего`, tone: "neutral" },
@@ -350,7 +420,7 @@ export default function Home() {
     if (actionMode === "receive") {
       const result = await runApi(window.cflowData.receiveBox({ ...form, user }), "Коробка принята и сохранена");
       if (result.ok) {
-        setForm((current) => ({ ...current, track: "", code: "", client: "", phone: "", weight: "", dimensions: "", comment: "", amount: "" }));
+        setForm((current) => ({ ...current, track: "", code: "", weight: "", dimensions: "", comment: "", amount: "" }));
         setTimeout(() => trackRef.current?.focus(), 0);
       }
       return;
@@ -377,7 +447,17 @@ export default function Home() {
     }
 
     if (actionMode === "client") {
-      await runApi(window.cflowData.createClient({ name: form.client, phone: form.phone, telegram: form.telegram, comments: form.comment, user }), "Клиент сохранен");
+      await runApi(window.cflowData.createClient({
+        name: form.client,
+        phone: form.phone,
+        telegram: form.telegram,
+        comments: form.comment,
+        clientCode: form.clientCode,
+        chinaAddress: form.chinaAddress,
+        clientRate: form.clientRate,
+        chinaRate: form.chinaRate,
+        user,
+      }), "Клиент сохранен");
       return;
     }
 
@@ -440,6 +520,16 @@ export default function Home() {
     setDetailModal({ type: "box", id });
   }
 
+  async function copyText(text: string, success: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice(success);
+      setError("");
+    } catch {
+      setError("Не удалось скопировать текст");
+    }
+  }
+
   const operationPanel = (
     <article className="panel intake-panel">
       <div className="panel-head">
@@ -484,13 +574,17 @@ export default function Home() {
       <dl className="details-list">
         <div><dt>ID</dt><dd>{selectedBox.id}</dd></div>
         <div><dt>Трек</dt><dd>{selectedBox.track}</dd></div>
-        <div><dt>Код</dt><dd>{selectedBox.code || "Не указан"}</dd></div>
+        <div><dt>Код коробки</dt><dd>{selectedBox.code || "Не указан"}</dd></div>
+        <div><dt>Код клиента</dt><dd>{selectedBox.clientCode || "Не указан"}</dd></div>
+        <div><dt>Партия</dt><dd>{selectedBox.batch || "Не указана"}</dd></div>
         <div><dt>Телефон</dt><dd>{selectedBox.phone}</dd></div>
         <div><dt>Вес</dt><dd>{selectedBox.weight}</dd></div>
         <div><dt>Размеры</dt><dd>{selectedBox.dimensions || "Не указаны"}</dd></div>
         <div><dt>Место</dt><dd>{selectedBox.place}</dd></div>
         <div><dt>Маршрут</dt><dd>{selectedBox.route}</dd></div>
-        <div><dt>Оплата</dt><dd>{showFinance ? selectedBox.payment : "Скрыто"}</dd></div>
+        <div><dt>К оплате</dt><dd>{showFinance ? money(selectedBox.chargeAmount || selectedBox.amount || 0) : selectedBox.payment}</dd></div>
+        {showFinance ? <div><dt>Себестоимость</dt><dd>{money(selectedBox.costAmount || 0)}</dd></div> : null}
+        {showFinance ? <div><dt>Прибыль</dt><dd>{money(selectedBox.profitAmount || 0)}</dd></div> : null}
         <div><dt>Ответственный</dt><dd>{selectedBox.owner}</dd></div>
         <div><dt>Комментарий</dt><dd>{selectedBox.comment || "Нет"}</dd></div>
       </dl>
@@ -683,6 +777,7 @@ export default function Home() {
             onClose={() => setDetailModal(null)}
             onOpenBox={openBoxDetail}
             onDeleteBox={deleteBox}
+            onCopyText={copyText}
           />
         ) : null}
       </section>
@@ -772,6 +867,10 @@ function ActionForm({
         <label>Имя<input value={form.client} onChange={(event) => update("client", event.target.value)} placeholder="Имя клиента" /></label>
         <label>Телефон<input value={form.phone} onChange={(event) => update("phone", event.target.value)} placeholder="+7..." /></label>
         <label>Telegram<input value={form.telegram} onChange={(event) => update("telegram", event.target.value)} placeholder="@username" /></label>
+        <label>Код клиента<input value={form.clientCode} onChange={(event) => update("clientCode", event.target.value)} placeholder="Будет выдан складом в Китае" /></label>
+        <label>Цена клиенту за кг<input value={form.clientRate} onChange={(event) => update("clientRate", event.target.value)} placeholder="2500" /></label>
+        {showFinance ? <label>Цена Китая за кг<input value={form.chinaRate} onChange={(event) => update("chinaRate", event.target.value)} placeholder="1800" /></label> : null}
+        <label>Адрес склада в Китае<input value={form.chinaAddress} onChange={(event) => update("chinaAddress", event.target.value)} placeholder="Адрес для покупок клиента" /></label>
         <label>Комментарий<input value={form.comment} onChange={(event) => update("comment", event.target.value)} placeholder="Заметка" /></label>
         <button className="primary" type="submit">Сохранить клиента</button>
       </form>
@@ -804,15 +903,18 @@ function ActionForm({
   return (
     <form className="action-form action-form-grid" onSubmit={onSubmit}>
       <label>Трек / QR<input ref={trackRef} value={form.track} onChange={(event) => update("track", event.target.value)} placeholder="YT938475120CN" /></label>
-      <label>Код<input value={form.code} onChange={(event) => update("code", event.target.value)} placeholder="Код клиента / маркировка" /></label>
+      <label>Код/маркировка коробки<input value={form.code} onChange={(event) => update("code", event.target.value)} placeholder="Код на коробке / строка накладной" /></label>
+      <label>Код клиента<input value={form.clientCode} onChange={(event) => update("clientCode", event.target.value)} placeholder="Код клиента со склада Китая" /></label>
       <label>Клиент<input value={form.client} onChange={(event) => update("client", event.target.value)} placeholder="Можно оставить пустым, если клиент неизвестен" /></label>
       <label>Телефон<input value={form.phone} onChange={(event) => update("phone", event.target.value)} placeholder="+7..." /></label>
       <label>Вес<input value={form.weight} onChange={(event) => update("weight", event.target.value)} placeholder="8.4" /></label>
       <label>Размеры<input value={form.dimensions} onChange={(event) => update("dimensions", event.target.value)} placeholder="42x35x28" /></label>
+      <label>Партия/накладная<input value={form.batch} onChange={(event) => update("batch", event.target.value)} placeholder="INV-001 / контейнер / рейс" /></label>
       <label>Место<input value={form.place} onChange={(event) => update("place", event.target.value)} placeholder="A-04 / S2 / P3" /></label>
       <label>Маршрут<input value={form.route} onChange={(event) => update("route", event.target.value)} /></label>
       {showFinance ? <label>Оплата<input value={form.payment} onChange={(event) => update("payment", event.target.value)} placeholder="Не оплачено" /></label> : null}
-      {showFinance ? <label>Сумма<input value={form.amount} onChange={(event) => update("amount", event.target.value)} placeholder="18600" /></label> : null}
+      <label>Цена клиенту за кг<input value={form.clientRate} onChange={(event) => update("clientRate", event.target.value)} placeholder="2500" /></label>
+      {showFinance ? <label>Цена Китая за кг<input value={form.chinaRate} onChange={(event) => update("chinaRate", event.target.value)} placeholder="1800" /></label> : null}
       <label>Комментарий<input value={form.comment} onChange={(event) => update("comment", event.target.value)} placeholder="Заметка" /></label>
       <button className="primary" type="submit">Принять коробку</button>
     </form>
@@ -854,7 +956,7 @@ function ClientsPanel({ clients, onOpenClient }: { clients: ClientItem[]; onOpen
             <span className="box-id">{client.id}</span>
             <strong>{client.name}</strong>
             <span>{client.phone || "Без телефона"}</span>
-            <span>{client.telegram || "Telegram не указан"}</span>
+            <span>{client.clientCode || "Код не выдан"}</span>
           </button>
         ))}
         {!clients.length ? <p className="empty-state">Клиенты не найдены</p> : null}
@@ -908,10 +1010,11 @@ function FinancePanel({ finances }: { finances: FinanceData }) {
     <article className="panel">
       <div className="panel-head compact"><div><span className="eyebrow">Финансы</span><h2>Операции сегодня</h2></div></div>
       <div className="finance-grid">
-        <div><span>Доход</span><strong>{money(finances.incomeToday)}</strong></div>
-        <div><span>Ожидается</span><strong>{money(finances.expectedToday)}</strong></div>
-        <div><span>Расход</span><strong>{money(finances.expensesToday)}</strong></div>
-        <div><span>Долг</span><strong>{money(finances.debt)}</strong></div>
+        <div><span>Получено от клиентов</span><strong>{money(finances.incomeToday)}</strong></div>
+        <div><span>Начислено клиентам</span><strong>{money(finances.chargedToday || finances.expectedToday)}</strong></div>
+        <div><span>Оплачено Китаю</span><strong>{money(finances.costToday || finances.expensesToday)}</strong></div>
+        <div><span>Долг клиентов</span><strong>{money(finances.debt)}</strong></div>
+        <div><span>Ожидаемая прибыль</span><strong>{money(finances.profitToday || 0)}</strong></div>
       </div>
     </article>
   );
@@ -934,7 +1037,9 @@ function ReportsPanel({ data, finances }: { data: CflowData; finances: FinanceDa
       </div>
       <div className="report-list">
         <div><strong>Долг клиентов</strong><span>{money(finances.debt)}</span></div>
-        <div><strong>Ожидается оплат</strong><span>{money(finances.expectedToday)}</span></div>
+        <div><strong>Начислено клиентам</strong><span>{money(finances.chargedToday || finances.expectedToday)}</span></div>
+        <div><strong>Оплачено Китаю</strong><span>{money(finances.costToday || finances.expensesToday)}</span></div>
+        <div><strong>Ожидаемая прибыль</strong><span>{money(finances.profitToday || 0)}</span></div>
         <div><strong>Отправок создано</strong><span>{data.shipments.length}</span></div>
         <div><strong>Проблемных коробок</strong><span>{data.boxes.filter(isProblem).length}</span></div>
       </div>
@@ -960,6 +1065,7 @@ function DetailModal({
   onClose,
   onOpenBox,
   onDeleteBox,
+  onCopyText,
 }: {
   box?: BoxItem;
   client?: ClientItem;
@@ -969,6 +1075,7 @@ function DetailModal({
   onClose: () => void;
   onOpenBox: (id: string) => void;
   onDeleteBox: (id: string) => void;
+  onCopyText: (text: string, success: string) => void;
 }) {
   const isClientModal = Boolean(client);
 
@@ -998,17 +1105,26 @@ function DetailModal({
             </div>
             <dl className="details-list modal-list">
               <div><dt>Клиент</dt><dd>{box.client}</dd></div>
-              <div><dt>Код</dt><dd>{box.code || "Не указан"}</dd></div>
+              <div><dt>Код коробки</dt><dd>{box.code || "Не указан"}</dd></div>
+              <div><dt>Код клиента</dt><dd>{box.clientCode || "Не указан"}</dd></div>
+              <div><dt>Партия</dt><dd>{box.batch || "Не указана"}</dd></div>
               <div><dt>Телефон</dt><dd>{box.phone || "Не указан"}</dd></div>
               <div><dt>Место</dt><dd>{box.place}</dd></div>
               <div><dt>Вес</dt><dd>{box.weight}</dd></div>
               <div><dt>Размеры</dt><dd>{box.dimensions || "Не указаны"}</dd></div>
               <div><dt>Расчетный вес</dt><dd>{chargeableWeight(box) ? `${chargeableWeight(box)} кг` : "Не рассчитан"}</dd></div>
               <div><dt>Маршрут</dt><dd>{box.route}</dd></div>
-              <div><dt>Оплата</dt><dd>{showFinance ? `${box.payment}${box.amount ? ` · ${money(box.amount)}` : ""}` : "Скрыто"}</dd></div>
+              <div><dt>К оплате клиенту</dt><dd>{showFinance ? money(box.chargeAmount || box.amount || 0) : box.payment}</dd></div>
+              {showFinance ? <div><dt>Цена клиенту/кг</dt><dd>{money(box.clientRate || 0)}</dd></div> : null}
+              {showFinance ? <div><dt>Цена Китая/кг</dt><dd>{money(box.chinaRate || 0)}</dd></div> : null}
+              {showFinance ? <div><dt>Себестоимость</dt><dd>{money(box.costAmount || 0)}</dd></div> : null}
+              {showFinance ? <div><dt>Прибыль</dt><dd>{money(box.profitAmount || 0)}</dd></div> : null}
               <div><dt>Ответственный</dt><dd>{box.owner}</dd></div>
               <div><dt>Комментарий</dt><dd>{box.comment || "Нет"}</dd></div>
             </dl>
+            <div className="detail-actions">
+              <button className="primary" type="button" onClick={() => onCopyText(arrivalMessage(box), "Сообщение клиенту скопировано")}>Скопировать сообщение клиенту</button>
+            </div>
             <div className="modal-danger">
               <div>
                 <strong>Ошибочный товар</strong>
@@ -1040,11 +1156,18 @@ function DetailModal({
           <>
             <dl className="details-list modal-list">
               <div><dt>ID</dt><dd>{client.id}</dd></div>
+              <div><dt>Код клиента</dt><dd>{client.clientCode || "Не выдан"}</dd></div>
               <div><dt>Телефон</dt><dd>{client.phone || "Не указан"}</dd></div>
               <div><dt>Telegram</dt><dd>{client.telegram || "Не указан"}</dd></div>
+              <div><dt>Адрес склада Китай</dt><dd>{client.chinaAddress || "Не указан"}</dd></div>
+              <div><dt>Тариф клиенту</dt><dd>{client.clientRate ? money(client.clientRate) : "Не указан"}</dd></div>
+              {showFinance ? <div><dt>Цена Китая</dt><dd>{client.chinaRate ? money(client.chinaRate) : "Не указана"}</dd></div> : null}
               <div><dt>Комментарий</dt><dd>{client.comments || "Нет"}</dd></div>
               <div><dt>Коробок</dt><dd>{clientBoxes.length}</dd></div>
             </dl>
+            <div className="detail-actions">
+              <button className="primary" type="button" onClick={() => onCopyText(clientInstruction(client), "Инструкция клиенту скопирована")}>Скопировать инструкцию клиенту</button>
+            </div>
             <div className="modal-section">
               <div className="panel-head compact">
                 <h2>Коробки клиента</h2>

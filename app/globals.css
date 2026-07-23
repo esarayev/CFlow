@@ -36,7 +36,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -103,19 +104,21 @@ button {
   gap: 7px;
 }
 
-.nav-list a {
+.nav-list button {
   display: flex;
   align-items: center;
   gap: 10px;
   min-height: 42px;
   padding: 0 12px;
+  border: 0;
   border-radius: 8px;
   color: var(--muted);
+  background: transparent;
   text-decoration: none;
   transition: background 180ms ease, color 180ms ease;
 }
 
-.nav-list a span {
+.nav-list button span {
   display: grid;
   width: 24px;
   height: 24px;
@@ -127,10 +130,11 @@ button {
   font-weight: 700;
 }
 
-.nav-list a.active,
-.nav-list a:hover {
+.nav-list button.active,
+.nav-list button:hover {
   background: var(--foreground);
   color: var(--panel);
+  transform: none;
 }
 
 .operator-card {
@@ -272,6 +276,12 @@ button.ghost {
   color: var(--foreground);
   padding: 0 14px;
   outline: 0;
+}
+
+.auth-error {
+  margin: -14px 0 0;
+  color: var(--danger);
+  font-size: 13px;
 }
 
 .security-grid {
@@ -480,7 +490,7 @@ h2 {
 }
 
 .box-id {
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 13px;
   font-weight: 700;
 }
@@ -569,7 +579,7 @@ h2 {
 
 .activity time {
   color: var(--muted);
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--font-mono), monospace;
   font-size: 12px;
 }
 
@@ -599,8 +609,75 @@ h2 {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.86);
   padding: 8px 10px;
-  font-family: var(--font-geist-mono), monospace;
+  font-family: var(--font-mono), monospace;
   font-weight: 800;
+}
+
+.users-app {
+  display: grid;
+  gap: 18px;
+}
+
+.users-hero {
+  align-items: start;
+}
+
+.user-grid {
+  display: grid;
+  grid-template-columns: 420px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.user-form {
+  display: grid;
+  gap: 12px;
+}
+
+.user-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.user-form input,
+.user-form select {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--foreground);
+  padding: 0 12px;
+  outline: 0;
+}
+
+.user-list {
+  display: grid;
+  gap: 8px;
+}
+
+.user-row {
+  display: grid;
+  grid-template-columns: 80px minmax(180px, 1fr) 120px 90px;
+  gap: 14px;
+  align-items: center;
+  min-height: 62px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 12px;
+}
+
+.user-row strong,
+.user-row small {
+  display: block;
+}
+
+.user-row small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .details-head {
@@ -693,17 +770,17 @@ h2 {
   }
 
   .brand div:last-child,
-  .nav-list a:not(.active),
+  .nav-list button:not(.active),
   .operator-card {
     display: none;
   }
 
-  .nav-list a {
+  .nav-list button {
     justify-content: center;
     padding: 0;
   }
 
-  .nav-list a.active {
+  .nav-list button.active {
     font-size: 0;
   }
 
@@ -733,7 +810,7 @@ h2 {
   }
 
   .brand div:last-child,
-  .nav-list a:not(.active) {
+  .nav-list button:not(.active) {
     display: flex;
   }
 
@@ -750,6 +827,7 @@ h2 {
   .hero-row,
   .auth-form,
   .security-grid,
+  .user-grid,
   .split-panels {
     grid-template-columns: 1fr;
   }
@@ -779,6 +857,10 @@ h2 {
     grid-template-columns: 88px minmax(0, 1fr) 96px;
   }
 
+  .user-row {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+
   .hide-mobile {
     display: none;
   }
@@ -796,6 +878,10 @@ h2 {
   }
 
   .box-row {
+    grid-template-columns: 1fr;
+  }
+
+  .user-row {
     grid-template-columns: 1fr;
   }
 

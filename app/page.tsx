@@ -85,12 +85,15 @@ const warehouse = [
   { zone: "QC", fill: 34, note: "Проверка и фото" },
 ];
 
+const demoEmail = "admin@cflow.kz";
+const demoCode = "123456";
+
 export default function Home() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(boxes[0].id);
   const [isUnlocked, setIsUnlocked] = useState(false);
-  const [loginEmail, setLoginEmail] = useState("");
-  const [loginCode, setLoginCode] = useState("");
+  const [loginEmail, setLoginEmail] = useState(demoEmail);
+  const [loginCode, setLoginCode] = useState(demoCode);
   const selectedBox = boxes.find((box) => box.id === selectedId) ?? boxes[0];
 
   const filteredBoxes = useMemo(() => {
@@ -126,7 +129,7 @@ export default function Home() {
             className="auth-form"
             onSubmit={(event) => {
               event.preventDefault();
-              if (loginEmail.trim() && loginCode.trim().length >= 4) {
+              if (loginEmail.trim().toLowerCase() === demoEmail && loginCode.trim() === demoCode) {
                 setIsUnlocked(true);
               }
             }}

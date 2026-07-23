@@ -19,6 +19,8 @@ declare global {
       list: () => Promise<User[]>;
       authenticate: (username: string, password: string) => Promise<{ ok: boolean; error?: string; user?: User }>;
       create: (user: { name: string; username: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
+      update: (user: { id: string; name: string; username: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
+      delete: (userId: string) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
     };
   }
 }
@@ -34,7 +36,7 @@ const roles: Array<{ name: Role; text: string }> = [
 const fallbackUsers: User[] = [
   {
     id: "USR-001",
-    name: "Ержан Сараев",
+    name: "Администратор",
     username: "esaraev85",
     role: "Руководитель",
     permissions: ["all"],
@@ -49,6 +51,7 @@ export default function UsersApp() {
   const [error, setError] = useState("");
   const [users, setUsers] = useState<User[]>(fallbackUsers);
   const [form, setForm] = useState({ name: "", username: "", password: "", role: "Менеджер" as Role });
+  const [editingId, setEditingId] = useState("");
 
   useEffect(() => {
     if (!isUnlocked) return;
@@ -68,13 +71,48 @@ export default function UsersApp() {
 
   async function createUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const result = await window.cflowUsers?.create(form);
+    const result = editingId
+      ? await window.cflowUsers?.update({ ...form, id: editingId })
+      : await window.cflowUsers?.create(form);
     if (!result?.ok) {
-      setError(result?.error || "Не удалось добавить пользователя");
+      setError(result?.error || "Не удалось сохранить пользователя");
       return;
     }
     setUsers(result.users || []);
     setForm({ name: "", username: "", password: "", role: "Менеджер" });
+    setEditingId("");
+    setError("");
+  }
+
+  function startEdit(user: User) {
+    setEditingId(user.id);
+    setForm({
+      name: user.name,
+      username: user.username,
+      password: "",
+      role: user.role as Role,
+    });
+    setError("");
+  }
+
+  function cancelEdit() {
+    setEditingId("");
+    setForm({ name: "", username: "", password: "", role: "Менеджер" });
+    setError("");
+  }
+
+  async function deleteUser(user: User) {
+    if (user.username === "esaraev85") {
+      setError("Нельзя удалить владельца кабинета");
+      return;
+    }
+
+    const result = await window.cflowUsers?.delete(user.id);
+    if (!result?.ok) {
+      setError(result?.error || "Не удалось удалить пользователя");
+      return;
+    }
+    setUsers(result.users || []);
     setError("");
   }
 
@@ -148,7 +186,7 @@ export default function UsersApp() {
           <div className="panel-head compact">
             <div>
               <span className="eyebrow">Новый сотрудник</span>
-              <h2>Добавить пользователя</h2>
+              <h2>{editingId ? "Редактировать пользователя" : "Добавить пользователя"}</h2>
             </div>
           </div>
           <form className="user-form" onSubmit={createUser}>
@@ -158,11 +196,21 @@ export default function UsersApp() {
             </label>
             <label>
               Логин
-              <input value={form.username} onChange={(event) => setForm({ ...form, username: event.target.value })} placeholder="login" />
+              <input
+                disabled={editingId === "USR-001"}
+                value={form.username}
+                onChange={(event) => setForm({ ...form, username: event.target.value })}
+                placeholder="login"
+              />
             </label>
             <label>
               Пароль
-              <input type="password" value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} placeholder="Минимум 6 символов" />
+              <input
+                type="password"
+                value={form.password}
+                onChange={(event) => setForm({ ...form, password: event.target.value })}
+                placeholder={editingId ? "Оставьте пустым, чтобы не менять" : "Минимум 6 символов"}
+              />
             </label>
             <label>
               Роль
@@ -172,7 +220,10 @@ export default function UsersApp() {
                 ))}
               </select>
             </label>
-            <button className="primary" type="submit">Добавить нового</button>
+            <div className="form-actions">
+              <button className="primary" type="submit">{editingId ? "Сохранить изменения" : "Добавить нового"}</button>
+              {editingId ? <button type="button" onClick={cancelEdit}>Отмена</button> : null}
+            </div>
           </form>
           {error ? <p className="auth-error">{error}</p> : null}
         </article>
@@ -194,6 +245,17 @@ export default function UsersApp() {
                 </span>
                 <span>{user.role}</span>
                 <span className="status">{user.status}</span>
+                <button type="button" onClick={() => startEdit(user)}>
+                  Редактировать
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={user.username === "esaraev85"}
+                  type="button"
+                  onClick={() => deleteUser(user)}
+                >
+                  Удалить
+                </button>
               </div>
             ))}
           </div>

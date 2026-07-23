@@ -10,4 +10,6 @@ contextBridge.exposeInMainWorld("cflowUsers", {
   list: () => ipcRenderer.invoke("cflow-users:list"),
   authenticate: (username, password) => ipcRenderer.invoke("cflow-users:auth", { username, password }),
   create: (user) => ipcRenderer.invoke("cflow-users:create", user),
+  update: (user) => ipcRenderer.invoke("cflow-users:update", user),
+  delete: (userId) => ipcRenderer.invoke("cflow-users:delete", { userId }),
 });

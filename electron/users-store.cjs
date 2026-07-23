@@ -4,7 +4,7 @@ const crypto = require("node:crypto");
 
 const adminUser = {
   id: "USR-001",
-  name: "Ержан Сараев",
+  name: "Администратор",
   username: "esaraev85",
   role: "Руководитель",
   permissions: ["all"],
@@ -114,12 +114,68 @@ function createUser(app, input) {
   return { ok: true, user: publicUser(user), users: users.map(publicUser) };
 }
 
+function updateUser(app, input) {
+  const users = readUsers(app);
+  const userId = String(input.id || "");
+  const index = users.findIndex((item) => item.id === userId);
+
+  if (index === -1) {
+    return { ok: false, error: "Пользователь не найден" };
+  }
+
+  const current = users[index];
+  const isOwner = current.username === adminUser.username;
+  const name = String(input.name || "").trim();
+  const username = isOwner ? current.username : String(input.username || "").trim();
+  const role = String(input.role || current.role);
+  const password = String(input.password || "");
+
+  if (!name || !username) {
+    return { ok: false, error: "Укажите имя и логин" };
+  }
+
+  if (users.some((user) => user.id !== userId && user.username.toLowerCase() === username.toLowerCase())) {
+    return { ok: false, error: "Такой логин уже существует" };
+  }
+
+  users[index] = {
+    ...current,
+    name,
+    username,
+    role,
+    permissions: rolePermissions(role),
+    passwordHash: password ? hashPassword(password) : current.passwordHash,
+  };
+
+  writeUsers(app, users);
+  return { ok: true, user: publicUser(users[index]), users: users.map(publicUser) };
+}
+
+function deleteUser(app, userId) {
+  const users = readUsers(app);
+  const user = users.find((item) => item.id === userId);
+
+  if (!user) {
+    return { ok: false, error: "Пользователь не найден" };
+  }
+
+  if (user.username === adminUser.username) {
+    return { ok: false, error: "Нельзя удалить владельца кабинета" };
+  }
+
+  const nextUsers = users.filter((item) => item.id !== userId);
+  writeUsers(app, nextUsers);
+  return { ok: true, users: nextUsers.map(publicUser) };
+}
+
 function registerUserIpc(ipcMain, app) {
   ipcMain.handle("cflow-users:list", () => listUsers(app));
   ipcMain.handle("cflow-users:auth", (_event, payload) =>
     authenticate(app, payload?.username, payload?.password),
   );
   ipcMain.handle("cflow-users:create", (_event, payload) => createUser(app, payload));
+  ipcMain.handle("cflow-users:update", (_event, payload) => updateUser(app, payload));
+  ipcMain.handle("cflow-users:delete", (_event, payload) => deleteUser(app, payload?.userId));
 }
 
 module.exports = {

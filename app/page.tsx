@@ -17,6 +17,8 @@ declare global {
       list: () => Promise<SessionUser[]>;
       authenticate: (username: string, password: string) => Promise<{ ok: boolean; error?: string; user?: SessionUser }>;
       create: (user: { name: string; username: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
+      update: (user: { id: string; name: string; username: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
+      delete: (userId: string) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
     };
   }
 }

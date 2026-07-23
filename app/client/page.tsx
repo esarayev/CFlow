@@ -11,10 +11,8 @@ type TelegramUser = {
 };
 
 type ClientRegistration = {
-  name: string;
-  phone: string;
-  city: string;
-  comment: string;
+  fullName: string;
+  whatsappPhone: string;
 };
 
 type CargoStage = "china_warehouse" | "in_transit" | "kazakhstan" | "astana";
@@ -95,10 +93,8 @@ export default function ClientMiniApp() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [form, setForm] = useState<ClientRegistration>({
-    name: "",
-    phone: "",
-    city: "Астана",
-    comment: "",
+    fullName: "",
+    whatsappPhone: "",
   });
 
   useEffect(() => {
@@ -111,7 +107,7 @@ export default function ClientMiniApp() {
 
   useEffect(() => {
     if (!telegramUser) return;
-    setForm((current) => ({ ...current, name: current.name || clientName(telegramUser) }));
+    setForm((current) => ({ ...current, fullName: current.fullName || clientName(telegramUser) }));
   }, [telegramUser]);
 
   useEffect(() => {
@@ -139,7 +135,13 @@ export default function ClientMiniApp() {
     fetch("/api/client/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...form, initData }),
+      body: JSON.stringify({
+        initData,
+        name: form.fullName,
+        phone: form.whatsappPhone,
+        city: "",
+        comment: "",
+      }),
     })
       .then((response) => response.json())
       .then((data) => {
@@ -172,7 +174,7 @@ export default function ClientMiniApp() {
         <div>
           <span>ES Logistics</span>
           <h1>{isRegistered ? "Личный кабинет клиента" : "Регистрация клиента"}</h1>
-          <p>{isRegistered ? "Код, адрес склада и статусы ваших товаров в одном месте." : "Оставьте заявку, мы подтвердим регистрацию и отправим код для покупок в Китае."}</p>
+          <p>{isRegistered ? "Код, адрес склада и статусы ваших товаров в одном месте." : "Заполните ФИО и WhatsApp. После подтверждения мы отправим код для покупок в Китае."}</p>
         </div>
         <img src="/cflow-logo-tight.png" alt="CFlow" />
       </section>
@@ -183,17 +185,15 @@ export default function ClientMiniApp() {
 
       {!isRegistered ? (
         <form className="client-card client-form" onSubmit={submitRegistration}>
-          <label>Имя<input value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Ваше имя" required /></label>
-          <label>Телефон<input value={form.phone} onChange={(event) => update("phone", event.target.value)} placeholder="+7..." required /></label>
-          <label>Город<input value={form.city} onChange={(event) => update("city", event.target.value)} placeholder="Астана" /></label>
-          <label>Комментарий<input value={form.comment} onChange={(event) => update("comment", event.target.value)} placeholder="Что планируете заказывать" /></label>
+          <label>ФИО<input value={form.fullName} onChange={(event) => update("fullName", event.target.value)} placeholder="Фамилия Имя Отчество" required /></label>
+          <label>Номер WhatsApp<input value={form.whatsappPhone} onChange={(event) => update("whatsappPhone", event.target.value)} placeholder="+7..." required /></label>
           <button className="primary" type="submit">Отправить заявку</button>
         </form>
       ) : (
         <section className="client-stack">
           <article className="client-card client-status-card">
             <span className={isApproved ? "client-pill success" : "client-pill"}>{isApproved ? "Подтвержден" : "Ожидает подтверждения"}</span>
-            <h2>{client?.name || form.name || "Клиент"}</h2>
+            <h2>{client?.name || form.fullName || "Клиент"}</h2>
             <p>{isApproved ? "Код и адрес активны. Указывайте код при каждой покупке." : "Менеджер проверит заявку и отправит код клиента."}</p>
           </article>
 

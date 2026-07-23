@@ -9,6 +9,7 @@ type SessionUser = {
   role: string;
   permissions: string[];
   status: string;
+  statusLabel?: string;
 };
 
 declare global {

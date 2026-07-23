@@ -2,16 +2,17 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 
-const adminUser = {
+const ownerUsername = "esaraev85";
+const ownerPassword = "Q1w2e3r4!";
+
+const ownerUser = {
   id: "USR-001",
   name: "Администратор",
-  username: "esaraev85",
+  username: ownerUsername,
   role: "Руководитель",
   permissions: ["all"],
-  status: "Активен",
+  status: "active",
 };
-
-const adminPassword = "Q1w2e3r4!";
 
 function dataDir(app) {
   return path.join(app.getPath("appData"), "CFlow");
@@ -27,10 +28,14 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
 }
 
 function verifyPassword(password, passwordHash) {
-  const [salt, expected] = String(passwordHash).split(":");
+  const [salt, expected] = String(passwordHash || "").split(":");
   if (!salt || !expected) return false;
-  const actual = crypto.scryptSync(password, salt, 64);
-  return crypto.timingSafeEqual(Buffer.from(expected, "hex"), actual);
+
+  const actual = crypto.scryptSync(String(password || ""), salt, 64);
+  const expectedBuffer = Buffer.from(expected, "hex");
+  if (expectedBuffer.length !== actual.length) return false;
+
+  return crypto.timingSafeEqual(expectedBuffer, actual);
 }
 
 function rolePermissions(role) {
@@ -42,34 +47,73 @@ function rolePermissions(role) {
   return ["receive_box", "issue_box", "search"];
 }
 
+function normalizeStatus(status) {
+  if (!status) return "active";
+  if (status === "active" || status === "disabled") return status;
+  if (status === "Активен" || status === "РђРєС‚РёРІРµРЅ") return "active";
+  if (status === "Отключен" || status === "РћС‚РєР»СЋС‡РµРЅ") return "disabled";
+  return "active";
+}
+
+function normalizeUser(user) {
+  const normalized = { ...user };
+
+  if (normalized.username === ownerUsername) {
+    normalized.id = ownerUser.id;
+    normalized.name = normalized.name && normalized.name !== "Ержан Сараев" && normalized.name !== "Р•СЂР¶Р°РЅ РЎР°СЂР°РµРІ"
+      ? normalized.name
+      : ownerUser.name;
+    normalized.role = ownerUser.role;
+    normalized.permissions = ownerUser.permissions;
+    normalized.status = "active";
+  }
+
+  normalized.status = normalizeStatus(normalized.status);
+  if (!Array.isArray(normalized.permissions)) normalized.permissions = rolePermissions(normalized.role);
+  if (!normalized.role) normalized.role = "Менеджер";
+
+  return normalized;
+}
+
 function publicUser(user) {
-  const { passwordHash: _passwordHash, ...safeUser } = user;
-  return safeUser;
+  const normalized = normalizeUser(user);
+  const { passwordHash: _passwordHash, ...safeUser } = normalized;
+  return {
+    ...safeUser,
+    statusLabel: normalized.status === "active" ? "Активен" : "Отключен",
+  };
 }
 
 function ensureStore(app) {
   fs.mkdirSync(dataDir(app), { recursive: true });
   const file = storePath(app);
   if (!fs.existsSync(file)) {
-    const users = [
-      {
-        ...adminUser,
-        passwordHash: hashPassword(adminPassword),
-      },
-    ];
+    const users = [{ ...ownerUser, passwordHash: hashPassword(ownerPassword) }];
     fs.writeFileSync(file, JSON.stringify({ users }, null, 2), "utf8");
   }
 }
 
-function readUsers(app) {
-  ensureStore(app);
-  const parsed = JSON.parse(fs.readFileSync(storePath(app), "utf8"));
-  return Array.isArray(parsed.users) ? parsed.users : [];
-}
-
 function writeUsers(app, users) {
   ensureStore(app);
-  fs.writeFileSync(storePath(app), JSON.stringify({ users }, null, 2), "utf8");
+  fs.writeFileSync(storePath(app), JSON.stringify({ users: users.map(normalizeUser) }, null, 2), "utf8");
+}
+
+function readUsers(app) {
+  ensureStore(app);
+
+  const parsed = JSON.parse(fs.readFileSync(storePath(app), "utf8"));
+  const users = Array.isArray(parsed.users) ? parsed.users.map(normalizeUser) : [];
+  const owner = users.find((user) => user.username === ownerUsername);
+
+  if (!owner) {
+    users.unshift({ ...ownerUser, passwordHash: hashPassword(ownerPassword) });
+    writeUsers(app, users);
+    return users;
+  }
+
+  if (!owner.passwordHash) owner.passwordHash = hashPassword(ownerPassword);
+  writeUsers(app, users);
+  return users;
 }
 
 function listUsers(app) {
@@ -77,10 +121,13 @@ function listUsers(app) {
 }
 
 function authenticate(app, username, password) {
-  const user = readUsers(app).find((item) => item.username === username && item.status === "Активен");
+  const cleanUsername = String(username || "").trim();
+  const user = readUsers(app).find((item) => item.username === cleanUsername && item.status === "active");
+
   if (!user || !verifyPassword(password, user.passwordHash)) {
     return { ok: false, error: "Неверный логин или пароль" };
   }
+
   return { ok: true, user: publicUser(user) };
 }
 
@@ -105,7 +152,7 @@ function createUser(app, input) {
     username,
     role,
     permissions: rolePermissions(role),
-    status: "Активен",
+    status: "active",
     passwordHash: hashPassword(password),
   };
 
@@ -124,10 +171,10 @@ function updateUser(app, input) {
   }
 
   const current = users[index];
-  const isOwner = current.username === adminUser.username;
+  const isOwner = current.username === ownerUsername;
   const name = String(input.name || "").trim();
   const username = isOwner ? current.username : String(input.username || "").trim();
-  const role = String(input.role || current.role);
+  const role = isOwner ? ownerUser.role : String(input.role || current.role);
   const password = String(input.password || "");
 
   if (!name || !username) {
@@ -140,10 +187,12 @@ function updateUser(app, input) {
 
   users[index] = {
     ...current,
+    id: isOwner ? ownerUser.id : current.id,
     name,
     username,
     role,
     permissions: rolePermissions(role),
+    status: isOwner ? "active" : normalizeStatus(current.status),
     passwordHash: password ? hashPassword(password) : current.passwordHash,
   };
 
@@ -159,8 +208,8 @@ function deleteUser(app, userId) {
     return { ok: false, error: "Пользователь не найден" };
   }
 
-  if (user.username === adminUser.username) {
-    return { ok: false, error: "Нельзя удалить владельца кабинета" };
+  if (user.username === ownerUsername) {
+    return { ok: false, error: "Нельзя удалить владельца кабинета. Можно изменить имя и пароль." };
   }
 
   const nextUsers = users.filter((item) => item.id !== userId);

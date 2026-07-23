@@ -12,6 +12,20 @@ type SessionUser = {
   statusLabel?: string;
 };
 
+type BoxItem = {
+  id: string;
+  track: string;
+  client: string;
+  phone: string;
+  status: string;
+  place: string;
+  weight: string;
+  route: string;
+  payment: string;
+  updated: string;
+  owner: string;
+};
+
 declare global {
   interface Window {
     cflowUsers?: {
@@ -24,7 +38,7 @@ declare global {
   }
 }
 
-const boxes = [
+const boxes: BoxItem[] = [
   {
     id: "CF-240718",
     track: "YT938475120CN",
@@ -80,18 +94,20 @@ const boxes = [
 ];
 
 const activity = [
-  { time: "10:42", text: "CF-240718 размещена в A-04 / S2 / P3", user: "Марат" },
-  { time: "10:35", text: "CF-240719 переведена в ожидание выдачи", user: "Алина" },
-  { time: "10:21", text: "Создан клиент Нурбол Канат", user: "Сергей" },
-  { time: "10:08", text: "Контейнер KZ-18 получил 16 коробок", user: "Марат" },
+  { time: "10:42", title: "Размещение", text: "CF-240718 поставлена в A-04 / S2 / P3", user: "Марат" },
+  { time: "10:35", title: "Выдача", text: "CF-240719 переведена в ожидание клиента", user: "Алина" },
+  { time: "10:21", title: "Клиент", text: "Создан клиент Нурбол Канат", user: "Сергей" },
+  { time: "10:08", title: "Отправка", text: "Контейнер KZ-18 получил 16 коробок", user: "Марат" },
 ];
 
 const warehouse = [
-  { zone: "A", fill: 78, note: "Приемка и быстрые выдачи" },
-  { zone: "B", fill: 52, note: "Клиентская зона" },
-  { zone: "C", fill: 91, note: "Крупный груз" },
-  { zone: "QC", fill: 34, note: "Проверка и фото" },
+  { zone: "A", fill: 78, boxes: 412, note: "Приемка и быстрые выдачи" },
+  { zone: "B", fill: 52, boxes: 238, note: "Клиентская зона" },
+  { zone: "C", fill: 91, boxes: 501, note: "Крупный груз" },
+  { zone: "QC", fill: 34, boxes: 36, note: "Проверка и фото" },
 ];
+
+const navItems = ["Dashboard", "Коробки", "Клиенты", "Склад", "Отправки", "Финансы", "Отчеты", "Настройки"];
 
 function canSeeFinance(user: SessionUser) {
   return user.permissions.includes("all") || user.permissions.includes("finance");
@@ -109,7 +125,7 @@ export default function Home() {
   const showFinance = sessionUser ? canSeeFinance(sessionUser) : false;
 
   const metrics = [
-    { label: "Грузов в работе", value: "1 284", delta: "+86 за неделю", tone: "neutral" },
+    { label: "В работе", value: "1 284", delta: "+86 за неделю", tone: "neutral" },
     { label: "Пришло сегодня", value: "74", delta: "18 без места", tone: "blue" },
     { label: "Ждет выдачи", value: "312", delta: "42 оплачены", tone: "green" },
     { label: "Проблемные", value: "9", delta: "3 без клиента", tone: "red" },
@@ -125,13 +141,20 @@ export default function Home() {
 
   async function unlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const result = await window.cflowUsers?.authenticate(loginName, loginPassword);
-    if (result?.ok && result.user) {
+
+    if (!window.cflowUsers) {
+      setLoginError("Служба авторизации не загрузилась. Перезапустите CFlow с ярлыка.");
+      return;
+    }
+
+    const result = await window.cflowUsers.authenticate(loginName, loginPassword);
+    if (result.ok && result.user) {
       setSessionUser(result.user);
       setLoginError("");
       return;
     }
-    setLoginError(result?.error || "Неверный логин или пароль");
+
+    setLoginError(result.error || "Неверный логин или пароль");
   }
 
   if (!sessionUser) {
@@ -139,18 +162,17 @@ export default function Home() {
       <main className="auth-shell">
         <section className="auth-panel" aria-label="Вход в CFlow">
           <div className="brand auth-brand">
-            <img className="brand-logo" src="./cflow-logo-full.png" alt="CFlow" />
+            <img className="brand-logo brand-logo-auth" src="./cflow-logo-tight.png" alt="CFlow" />
             <div>
               <strong>CFlow</strong>
               <span>рабочий кабинет карго-точки</span>
             </div>
           </div>
           <div>
-            <p className="eyebrow">Рабочее приложение</p>
+            <p className="eyebrow">Безопасный вход</p>
             <h1>Вход сотрудника</h1>
             <p className="lead">
-              Пользователи создаются в отдельном приложении CFlow Пользователи.
-              Доступные функции зависят от назначенной роли.
+              Доступные разделы зависят от роли. Пользователи создаются в отдельном приложении CFlow Пользователи.
             </p>
           </div>
           <form className="auth-form" onSubmit={unlock}>
@@ -173,8 +195,8 @@ export default function Home() {
   return (
     <main className="shell">
       <aside className="sidebar" aria-label="Основная навигация">
-        <div className="brand">
-          <img className="brand-logo" src="./cflow-logo-full.png" alt="CFlow" />
+        <div className="brand sidebar-brand">
+          <img className="brand-logo" src="./cflow-logo-tight.png" alt="CFlow" />
           <div>
             <strong>CFlow</strong>
             <span>{sessionUser.role}</span>
@@ -182,9 +204,9 @@ export default function Home() {
         </div>
 
         <nav className="nav-list">
-          {["Dashboard", "Коробки", "Клиенты", "Склад", "Отправки", ...(showFinance ? ["Финансы", "Отчеты"] : []), "Настройки"].map((item, index) => (
+          {navItems.filter((item) => showFinance || !["Финансы", "Отчеты"].includes(item)).map((item, index) => (
             <button className={index === 0 ? "active" : ""} type="button" key={item}>
-              <span>{item.slice(0, 1)}</span>
+              <span aria-hidden="true">{item.slice(0, 1)}</span>
               {item}
             </button>
           ))}
@@ -193,7 +215,7 @@ export default function Home() {
         <div className="operator-card">
           <span>Сессия</span>
           <strong>{sessionUser.name}</strong>
-          <p>{showFinance ? "Полный финансовый доступ." : "Финансовые суммы скрыты по роли."}</p>
+          <p>{showFinance ? "Полный доступ к операциям и финансам." : "Финансы скрыты по роли сотрудника."}</p>
         </div>
       </aside>
 
@@ -203,32 +225,32 @@ export default function Home() {
             <span>Поиск</span>
             <input
               aria-label="Поиск по треку, телефону, ФИО, QR, коробке, контейнеру или комментарию"
-              placeholder="Трек, телефон, клиент, QR, контейнер..."
+              placeholder="Трек, телефон, клиент, QR, коробка, контейнер..."
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
           <div className="top-actions">
             <button type="button">Принять</button>
-            <button type="button" className="primary">Выдать товар</button>
+            <button type="button" className="primary">Выдать</button>
           </div>
         </header>
 
-        <div className="hero-row">
+        <section className="operation-board">
           <div>
             <p className="eyebrow">Сегодня, Алматы</p>
             <h1>Операционный центр карго-точки</h1>
             <p className="lead">
-              Менеджер работает с приемом, выдачей, поиском и складом. Руководитель
-              видит все функции, включая финансы.
+              Все построено вокруг коробки: приемка, размещение, поиск, перемещение, отправка и выдача.
             </p>
           </div>
-          <div className="finance-card">
-            <span>{showFinance ? "Финансы сегодня" : "Финансы"}</span>
-            <strong>{showFinance ? "2 840 500 T" : "Скрыто"}</strong>
-            <p>{showFinance ? "+418 000 T ожидается к закрытию смены" : "Нет доступа для текущей роли"}</p>
+          <div className="scan-card">
+            <span>Быстрое действие</span>
+            <strong>Сканировать трек или QR</strong>
+            <p>Оператор должен начать приемку или выдачу без переходов по меню.</p>
+            <button className="primary" type="button">Открыть сканер</button>
           </div>
-        </div>
+        </section>
 
         <section className="metrics-grid" aria-label="Ключевые показатели">
           {metrics.map((metric) => (
@@ -245,14 +267,13 @@ export default function Home() {
             <article className="panel intake-panel">
               <div className="panel-head">
                 <div>
-                  <span className="eyebrow">Быстрый сценарий</span>
+                  <span className="eyebrow">2-3 клика</span>
                   <h2>Прием и выдача товара</h2>
                 </div>
-                <button type="button" className="ghost">Сканировать</button>
               </div>
               <div className="quick-actions">
-                {["Принять товар", "Найти клиента", "Выдать товар", "Переместить"].map((action) => (
-                  <button type="button" key={action}>{action}</button>
+                {["Принять товар", "Найти клиента", "Выдать товар", "Переместить", "Добавить фото"].map((action, index) => (
+                  <button className={index === 0 ? "primary" : ""} type="button" key={action}>{action}</button>
                 ))}
               </div>
             </article>
@@ -260,8 +281,8 @@ export default function Home() {
             <article className="panel">
               <div className="panel-head compact">
                 <div>
-                  <span className="eyebrow">Живая лента</span>
-                  <h2>Коробки в работе</h2>
+                  <span className="eyebrow">Коробки</span>
+                  <h2>В работе сейчас</h2>
                 </div>
                 <span className="counter">{filteredBoxes.length} найдено</span>
               </div>
@@ -295,11 +316,11 @@ export default function Home() {
                   {warehouse.map((item) => (
                     <div className="zone" key={item.zone}>
                       <div>
-                        <strong>{item.zone}</strong>
-                        <span>{item.fill}%</span>
+                        <strong>Зона {item.zone}</strong>
+                        <span>{item.boxes} коробок</span>
                       </div>
                       <div className="bar"><i style={{ width: `${item.fill}%` }} /></div>
-                      <p>{item.note}</p>
+                      <p>{item.note} · заполнено {item.fill}%</p>
                     </div>
                   ))}
                 </div>
@@ -314,6 +335,7 @@ export default function Home() {
                   {activity.map((item) => (
                     <div key={`${item.time}-${item.text}`}>
                       <time>{item.time}</time>
+                      <strong>{item.title}</strong>
                       <p>{item.text}</p>
                       <span>{item.user}</span>
                     </div>

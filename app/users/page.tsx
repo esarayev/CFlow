@@ -27,9 +27,9 @@ declare global {
 }
 
 const roles: Array<{ name: Role; text: string }> = [
-  { name: "Руководитель", text: "Все функции, включая финансы, отчеты и пользователей" },
-  { name: "Менеджер", text: "Прием товара, выдача товара, поиск, клиенты, без сумм на счету" },
-  { name: "Кладовщик", text: "Прием, перемещение, выдача, складские операции" },
+  { name: "Руководитель", text: "Все функции, финансы, отчеты, сотрудники и настройки" },
+  { name: "Менеджер", text: "Прием, выдача, поиск, клиенты и склад без финансовых сумм" },
+  { name: "Кладовщик", text: "Прием, перемещение, выдача и складские операции" },
   { name: "Финансы", text: "Оплаты, долги, отчеты и финансовые операции" },
   { name: "Оператор", text: "Быстрый прием, поиск и базовая выдача" },
 ];
@@ -157,17 +157,17 @@ export default function UsersApp() {
       <main className="auth-shell">
         <section className="auth-panel users-auth" aria-label="Вход в CFlow Пользователи">
           <div className="brand auth-brand">
-            <img className="brand-logo" src="./cflow-logo-full.png" alt="CFlow" />
+            <img className="brand-logo brand-logo-auth" src="./cflow-logo-tight.png" alt="CFlow" />
             <div>
               <strong>CFlow Пользователи</strong>
-              <span>отдельное приложение управления доступами</span>
+              <span>управление сотрудниками и ролями</span>
             </div>
           </div>
           <div>
             <p className="eyebrow">Кабинет доступа</p>
             <h1>Авторизация администратора</h1>
             <p className="lead">
-              Здесь создаются сотрудники и назначаются роли. Основное приложение использует эти роли, чтобы скрывать лишние функции.
+              Отдельное приложение для создания сотрудников, назначения ролей и ограничения финансовых данных.
             </p>
           </div>
           <form className="auth-form" onSubmit={unlock}>
@@ -191,27 +191,27 @@ export default function UsersApp() {
     <main className="users-admin-shell">
       <section className="users-admin-head">
         <div className="brand">
-          <img className="brand-logo" src="./cflow-logo-full.png" alt="CFlow" />
+          <img className="brand-logo" src="./cflow-logo-tight.png" alt="CFlow" />
           <div>
             <strong>CFlow Пользователи</strong>
-            <span>кабинет сотрудников и ролей</span>
+            <span>сотрудники, роли и доступы</span>
           </div>
         </div>
         <button type="button" onClick={() => setIsUnlocked(false)}>Выйти</button>
       </section>
 
-      <section className="hero-row users-hero">
+      <section className="operation-board users-hero">
         <div>
           <p className="eyebrow">Управление доступом</p>
           <h1>Пользователи кабинета</h1>
           <p className="lead">
-            Руководитель видит все. Менеджер не видит суммы на счету и финансовые отчеты, но может принимать и выдавать товар.
+            Руководитель видит все. Менеджер работает с приемкой, выдачей и складом без финансовых сумм.
           </p>
         </div>
-        <div className="finance-card">
+        <div className="scan-card">
           <span>Аккаунтов</span>
           <strong>{users.length}</strong>
-          <p>{activeUsers} активных</p>
+          <p>{activeUsers} активных сотрудников</p>
         </div>
       </section>
 

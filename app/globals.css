@@ -73,12 +73,13 @@ button {
 
 .brand-logo {
   display: block;
-  width: 172px;
-  height: 58px;
+  width: 178px;
+  height: 60px;
   flex: 0 0 auto;
   border-radius: 0;
   background: transparent;
-  object-fit: contain;
+  object-fit: cover;
+  object-position: center center;
   padding: 0;
 }
 
@@ -267,8 +268,8 @@ button.ghost {
 }
 
 .auth-brand .brand-logo {
-  width: 220px;
-  height: 74px;
+  width: 260px;
+  height: 88px;
   padding: 0;
 }
 

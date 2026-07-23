@@ -98,10 +98,15 @@ function writeUsers(app, users) {
   fs.writeFileSync(storePath(app), JSON.stringify({ users: users.map(normalizeUser) }, null, 2), "utf8");
 }
 
+function readStoreJson(app) {
+  const raw = fs.readFileSync(storePath(app), "utf8").replace(/^\uFEFF/, "");
+  return JSON.parse(raw);
+}
+
 function readUsers(app) {
   ensureStore(app);
 
-  const parsed = JSON.parse(fs.readFileSync(storePath(app), "utf8"));
+  const parsed = readStoreJson(app);
   const users = Array.isArray(parsed.users) ? parsed.users.map(normalizeUser) : [];
   const owner = users.find((user) => user.username === ownerUsername);
 
@@ -121,14 +126,18 @@ function listUsers(app) {
 }
 
 function authenticate(app, username, password) {
-  const cleanUsername = String(username || "").trim();
-  const user = readUsers(app).find((item) => item.username === cleanUsername && item.status === "active");
+  try {
+    const cleanUsername = String(username || "").trim();
+    const user = readUsers(app).find((item) => item.username === cleanUsername && item.status === "active");
 
-  if (!user || !verifyPassword(password, user.passwordHash)) {
-    return { ok: false, error: "Неверный логин или пароль" };
+    if (!user || !verifyPassword(password, user.passwordHash)) {
+      return { ok: false, error: "Неверный логин или пароль" };
+    }
+
+    return { ok: true, user: publicUser(user) };
+  } catch {
+    return { ok: false, error: "База пользователей повреждена. Перезапустите приложение." };
   }
-
-  return { ok: true, user: publicUser(user) };
 }
 
 function createUser(app, input) {

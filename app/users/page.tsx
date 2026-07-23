@@ -79,13 +79,17 @@ export default function UsersApp() {
       return;
     }
 
-    const result = await window.cflowUsers.authenticate(login, password);
-    if (result.ok) {
-      setIsUnlocked(true);
-      return;
-    }
+    try {
+      const result = await window.cflowUsers.authenticate(login, password);
+      if (result.ok) {
+        setIsUnlocked(true);
+        return;
+      }
 
-    setError(result.error || "Неверный логин или пароль");
+      setError(result.error || "Неверный логин или пароль");
+    } catch {
+      setError("Не удалось проверить пароль. Перезапустите приложение CFlow Пользователи.");
+    }
   }
 
   async function saveUser(event: FormEvent<HTMLFormElement>) {

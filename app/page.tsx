@@ -88,6 +88,9 @@ const warehouse = [
 export default function Home() {
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(boxes[0].id);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginCode, setLoginCode] = useState("");
   const selectedBox = boxes.find((box) => box.id === selectedId) ?? boxes[0];
 
   const filteredBoxes = useMemo(() => {
@@ -97,6 +100,71 @@ export default function Home() {
       Object.values(box).some((value) => value.toLowerCase().includes(normalized)),
     );
   }, [query]);
+
+  if (!isUnlocked) {
+    return (
+      <main className="auth-shell">
+        <section className="auth-panel" aria-label="Защищенный вход CFlow">
+          <div className="brand auth-brand">
+            <div className="brand-mark">CF</div>
+            <div>
+              <strong>CFlow Secure</strong>
+              <span>Windows desktop + cloud database</span>
+            </div>
+          </div>
+
+          <div>
+            <p className="eyebrow">Закрытый контур</p>
+            <h1>Вход только для сотрудников</h1>
+            <p className="lead">
+              Рабочая версия должна открываться как Windows-приложение,
+              проходить MFA и обращаться только к защищенному cloud API.
+            </p>
+          </div>
+
+          <form
+            className="auth-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (loginEmail.trim() && loginCode.trim().length >= 4) {
+                setIsUnlocked(true);
+              }
+            }}
+          >
+            <label>
+              Email сотрудника
+              <input
+                autoComplete="username"
+                inputMode="email"
+                placeholder="operator@cflow.kz"
+                value={loginEmail}
+                onChange={(event) => setLoginEmail(event.target.value)}
+              />
+            </label>
+            <label>
+              Код доступа
+              <input
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                placeholder="6 цифр"
+                type="password"
+                value={loginCode}
+                onChange={(event) => setLoginCode(event.target.value)}
+              />
+            </label>
+            <button className="primary" type="submit">Открыть смену</button>
+          </form>
+
+          <div className="security-grid">
+            <span>Cloud DB: только через API</span>
+            <span>MFA: обязательно</span>
+            <span>Audit log: без удаления</span>
+            <span>Desktop: hardened Electron</span>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="shell">

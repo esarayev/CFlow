@@ -16,8 +16,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: Arial, Helvetica, sans-serif;
+  --font-mono: "Cascadia Code", "Consolas", monospace;
 }
 
 * {
@@ -32,7 +32,7 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 button,
@@ -224,6 +224,71 @@ button.primary {
 
 button.ghost {
   background: transparent;
+}
+
+.auth-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 28px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(247, 248, 251, 0.92)),
+    radial-gradient(circle at 20% 10%, rgba(37, 99, 235, 0.12), transparent 28%);
+}
+
+.auth-panel {
+  display: grid;
+  width: min(100%, 760px);
+  gap: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 34px;
+}
+
+.auth-brand {
+  justify-content: space-between;
+}
+
+.auth-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.auth-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.auth-form input {
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--foreground);
+  padding: 0 14px;
+  outline: 0;
+}
+
+.security-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.security-grid span {
+  min-height: 54px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .hero-row {
@@ -683,6 +748,8 @@ h2 {
 
   .topbar,
   .hero-row,
+  .auth-form,
+  .security-grid,
   .split-panels {
     grid-template-columns: 1fr;
   }

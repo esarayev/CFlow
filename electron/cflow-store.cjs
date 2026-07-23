@@ -24,6 +24,20 @@ function makeId(prefix, count) {
   return `${prefix}-${String(count + 1).padStart(6, "0")}`;
 }
 
+function toNumber(value) {
+  const normalized = String(value || "")
+    .replace(/\s+/g, "")
+    .replace(",", ".")
+    .replace(/[^\d.-]/g, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isPaidPayment(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "оплачено" || normalized === "paid";
+}
+
 function emptyStore() {
   return {
     boxes: [],
@@ -38,6 +52,33 @@ function emptyStore() {
     },
     activity: [],
   };
+}
+
+function zoneFromPlace(place) {
+  const value = String(place || "").trim();
+  if (!value) return "Без места";
+  const [first] = value.split(/[\/\s-]+/).filter(Boolean);
+  return first || "Без места";
+}
+
+function deriveWarehouse(boxes) {
+  const activeBoxes = boxes.filter((box) => box.status !== "Выдано");
+  const groups = new Map();
+
+  activeBoxes.forEach((box) => {
+    const zone = zoneFromPlace(box.place);
+    const current = groups.get(zone) || { zone, boxes: 0, note: box.place || "Место не указано" };
+    current.boxes += 1;
+    if (!current.note && box.place) current.note = box.place;
+    groups.set(zone, current);
+  });
+
+  return Array.from(groups.values())
+    .sort((a, b) => a.zone.localeCompare(b.zone, "ru"))
+    .map((item) => ({
+      ...item,
+      fill: Math.min(100, Math.max(8, item.boxes * 8)),
+    }));
 }
 
 function seedData() {
@@ -197,10 +238,12 @@ function logActivity(data, title, text, user) {
 
 function publicSnapshot(app) {
   const data = readStore(app);
+  const warehouse = deriveWarehouse(data.boxes);
   return {
     ok: true,
     data: {
       ...data,
+      warehouse,
       activity: data.activity.map((item) => ({ ...item, displayTime: displayTime(item.time) })),
     },
   };
@@ -214,7 +257,13 @@ function upsertClient(data, input) {
   const existing = data.clients.find((client) =>
     (phone && client.phone === phone) || client.name.toLowerCase() === name.toLowerCase(),
   );
-  if (existing) return existing;
+  if (existing) {
+    existing.name = name || existing.name;
+    existing.phone = phone || existing.phone;
+    existing.telegram = String(input.telegram || existing.telegram || "").trim();
+    existing.comments = String(input.comments || input.comment || existing.comments || "").trim();
+    return existing;
+  }
 
   const client = {
     id: makeId("CL", data.clients.length),
@@ -258,7 +307,7 @@ function receiveBox(app, input) {
     dimensions: String(input.dimensions || "").trim(),
     route: String(input.route || "Китай -> Казахстан").trim(),
     payment: String(input.payment || "Не оплачено").trim(),
-    amount: Number(input.amount || 0),
+    amount: toNumber(input.amount),
     photo: String(input.photo || "").trim(),
     comment: String(input.comment || "").trim(),
     owner: String(input.user || "Оператор").trim(),
@@ -267,6 +316,14 @@ function receiveBox(app, input) {
   };
 
   data.boxes.unshift(box);
+  if (box.amount > 0) {
+    if (isPaidPayment(box.payment)) {
+      data.finances.incomeToday = Number(data.finances.incomeToday || 0) + box.amount;
+    } else {
+      data.finances.expectedToday = Number(data.finances.expectedToday || 0) + box.amount;
+      data.finances.debt = Number(data.finances.debt || 0) + box.amount;
+    }
+  }
   logActivity(data, "Приемка", `${box.id} принята и размещена: ${place}`, box.owner);
   writeStore(app, data);
   return publicSnapshot(app);
@@ -297,6 +354,10 @@ function moveBox(app, input) {
 function issueBox(app, input) {
   const boxId = String(input.boxId || "").trim();
   if (!boxId) return { ok: false, error: "Выберите коробку" };
+  const data = readStore(app);
+  const box = data.boxes.find((item) => item.id === boxId);
+  if (!box) return { ok: false, error: "Коробка не найдена" };
+  if (box.status === "Выдано") return { ok: false, error: "Эта коробка уже выдана" };
   return updateBox(app, boxId, { status: "Выдано", place: "Выдано клиенту", owner: input.user || "Оператор" }, "Выдача", input.user);
 }
 
@@ -329,6 +390,12 @@ function createShipment(app, input) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+  if (!selectedBoxes.length) return { ok: false, error: "Добавьте хотя бы одну коробку в отправку" };
+
+  const existingIds = new Set(data.boxes.map((box) => box.id));
+  const missing = selectedBoxes.filter((id) => !existingIds.has(id));
+  if (missing.length) return { ok: false, error: `Коробки не найдены: ${missing.join(", ")}` };
+
   const shipment = {
     id: makeId("SHIP", data.shipments.length),
     type,
@@ -336,7 +403,7 @@ function createShipment(app, input) {
     date: String(input.date || nowIso().slice(0, 10)),
     route: String(input.route || "Казахстан").trim(),
     boxes: selectedBoxes,
-    cost: Number(input.cost || 0),
+    cost: toNumber(input.cost),
   };
 
   data.shipments.unshift(shipment);
@@ -351,7 +418,7 @@ function createShipment(app, input) {
 function recordPayment(app, input) {
   const data = readStore(app);
   const boxId = String(input.boxId || "").trim();
-  const amount = Number(input.amount || 0);
+  const amount = toNumber(input.amount);
   if (!boxId || amount <= 0) return { ok: false, error: "Укажите коробку и сумму" };
   const box = data.boxes.find((item) => item.id === boxId);
   if (!box) return { ok: false, error: "Коробка не найдена" };
@@ -360,6 +427,8 @@ function recordPayment(app, input) {
   box.amount = amount;
   box.updatedAt = nowIso();
   data.finances.incomeToday = Number(data.finances.incomeToday || 0) + amount;
+  data.finances.debt = Math.max(0, Number(data.finances.debt || 0) - amount);
+  data.finances.expectedToday = Math.max(0, Number(data.finances.expectedToday || 0) - amount);
   logActivity(data, "Оплата", `${boxId}: принято ${amount} T`, input.user || "Оператор");
   writeStore(app, data);
   return publicSnapshot(app);

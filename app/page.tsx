@@ -1,6 +1,6 @@
 "use client";
 
-import { Dispatch, FormEvent, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
+import { Dispatch, FormEvent, RefObject, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 
 type SessionUser = {
   id: string;
@@ -27,6 +27,7 @@ type BoxItem = {
   amount?: number;
   photo?: string;
   comment?: string;
+  createdAt?: string;
   updatedAt?: string;
   owner: string;
 };
@@ -161,6 +162,7 @@ function isWaitingIssue(box: BoxItem) {
 
 export default function Home() {
   const searchRef = useRef<HTMLInputElement>(null);
+  const trackRef = useRef<HTMLInputElement>(null);
   const [data, setData] = useState<CflowData>(fallbackData);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
@@ -193,7 +195,6 @@ export default function Home() {
   });
 
   const showFinance = sessionUser ? canSeeFinance(sessionUser) : false;
-  const selectedBox = data.boxes.find((box) => box.id === selectedId) ?? data.boxes[0];
 
   useEffect(() => {
     if (!sessionUser || !window.cflowData) return;
@@ -212,6 +213,15 @@ export default function Home() {
     );
   }, [data.boxes, query]);
 
+  const selectedBox = data.boxes.find((box) => box.id === selectedId) ?? filteredBoxes[0] ?? data.boxes[0];
+
+  useEffect(() => {
+    if (!query.trim() || !filteredBoxes[0]) return;
+    if (!filteredBoxes.some((box) => box.id === selectedId)) {
+      setSelectedId(filteredBoxes[0].id);
+    }
+  }, [filteredBoxes, query, selectedId]);
+
   const filteredClients = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     if (!normalized) return data.clients;
@@ -222,7 +232,7 @@ export default function Home() {
 
   const metrics = [
     { label: "В работе", value: String(data.boxes.filter((box) => box.status !== "Выдано").length), delta: `${data.boxes.length} всего`, tone: "neutral" },
-    { label: "Пришло сегодня", value: String(data.boxes.filter((box) => box.status === "На складе").length), delta: "на хранении", tone: "blue" },
+    { label: "Пришло сегодня", value: String(data.boxes.filter((box) => box.createdAt?.slice(0, 10) === new Date().toISOString().slice(0, 10)).length), delta: "новые приемки", tone: "blue" },
     { label: "Ждет выдачи", value: String(data.boxes.filter(isWaitingIssue).length), delta: "готово клиентам", tone: "green" },
     { label: "Проблемные", value: String(data.boxes.filter(isProblem).length), delta: "требуют проверки", tone: "red" },
   ];
@@ -268,6 +278,7 @@ export default function Home() {
     const result = await call;
     applyResult(result);
     if (result.ok) setNotice(success);
+    return result;
   }
 
   function currentUserName() {
@@ -285,8 +296,11 @@ export default function Home() {
     const user = currentUserName();
 
     if (actionMode === "receive") {
-      await runApi(window.cflowData.receiveBox({ ...form, user }), "Коробка принята и сохранена");
-      setForm((current) => ({ ...current, track: "", client: "", phone: "", weight: "", dimensions: "", comment: "" }));
+      const result = await runApi(window.cflowData.receiveBox({ ...form, user }), "Коробка принята и сохранена");
+      if (result.ok) {
+        setForm((current) => ({ ...current, track: "", client: "", phone: "", weight: "", dimensions: "", comment: "", amount: "" }));
+        setTimeout(() => trackRef.current?.focus(), 0);
+      }
       return;
     }
 
@@ -339,8 +353,8 @@ export default function Home() {
   function openScanner() {
     setActiveNav("Коробки");
     setAction("receive");
-    searchRef.current?.focus();
-    setNotice("Сканер готов: введите или отсканируйте трек в поле поиска/приемки");
+    setTimeout(() => trackRef.current?.focus(), 0);
+    setNotice("Сканер готов: отсканируйте трек сразу в поле приемки");
   }
 
   if (!sessionUser) {
@@ -475,6 +489,7 @@ export default function Home() {
                 setForm={setForm}
                 selectedBox={selectedBox}
                 showFinance={showFinance}
+                trackRef={trackRef}
                 onSubmit={submitAction}
               />
             </article>
@@ -555,6 +570,7 @@ function ActionForm({
   setForm,
   selectedBox,
   showFinance,
+  trackRef,
   onSubmit,
 }: {
   mode: ActionMode;
@@ -562,6 +578,7 @@ function ActionForm({
   setForm: Dispatch<SetStateAction<ActionFormState>>;
   selectedBox?: BoxItem;
   showFinance: boolean;
+  trackRef: RefObject<HTMLInputElement | null>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }) {
   function update(name: string, value: string) {
@@ -571,8 +588,8 @@ function ActionForm({
   if (mode === "issue") {
     return (
       <form className="action-form" onSubmit={onSubmit}>
-        <p>Будет выдана коробка: <strong>{selectedBox?.id || "не выбрана"}</strong></p>
-        <button className="primary" type="submit" disabled={!selectedBox}>Подтвердить выдачу</button>
+        <p>Будет выдана коробка: <strong>{selectedBox ? `${selectedBox.id} · ${selectedBox.client}` : "не выбрана"}</strong></p>
+        <button className="primary" type="submit" disabled={!selectedBox || selectedBox.status === "Выдано"}>Подтвердить выдачу</button>
       </form>
     );
   }
@@ -615,7 +632,7 @@ function ActionForm({
         <label>Маршрут<input value={form.shipmentRoute} onChange={(event) => update("shipmentRoute", event.target.value)} /></label>
         <label>Дата<input type="date" value={form.shipmentDate} onChange={(event) => update("shipmentDate", event.target.value)} /></label>
         <label>ID коробок через запятую<input value={form.shipmentBoxes} onChange={(event) => update("shipmentBoxes", event.target.value)} placeholder="CF-000001, CF-000002" /></label>
-        <label>Стоимость<input value={form.shipmentCost} onChange={(event) => update("shipmentCost", event.target.value)} placeholder="0" /></label>
+        {showFinance ? <label>Стоимость<input value={form.shipmentCost} onChange={(event) => update("shipmentCost", event.target.value)} placeholder="0" /></label> : null}
         <button className="primary" type="submit">Создать отправку</button>
       </form>
     );
@@ -632,14 +649,15 @@ function ActionForm({
 
   return (
     <form className="action-form action-form-grid" onSubmit={onSubmit}>
-      <label>Трек / QR<input value={form.track} onChange={(event) => update("track", event.target.value)} placeholder="YT938475120CN" /></label>
+      <label>Трек / QR<input ref={trackRef} value={form.track} onChange={(event) => update("track", event.target.value)} placeholder="YT938475120CN" /></label>
       <label>Клиент<input value={form.client} onChange={(event) => update("client", event.target.value)} placeholder="Имя клиента" /></label>
       <label>Телефон<input value={form.phone} onChange={(event) => update("phone", event.target.value)} placeholder="+7..." /></label>
       <label>Вес<input value={form.weight} onChange={(event) => update("weight", event.target.value)} placeholder="8.4" /></label>
       <label>Размеры<input value={form.dimensions} onChange={(event) => update("dimensions", event.target.value)} placeholder="42x35x28" /></label>
       <label>Место<input value={form.place} onChange={(event) => update("place", event.target.value)} placeholder="A-04 / S2 / P3" /></label>
       <label>Маршрут<input value={form.route} onChange={(event) => update("route", event.target.value)} /></label>
-      <label>Оплата<input value={form.payment} onChange={(event) => update("payment", event.target.value)} placeholder="Не оплачено" /></label>
+      {showFinance ? <label>Оплата<input value={form.payment} onChange={(event) => update("payment", event.target.value)} placeholder="Не оплачено" /></label> : null}
+      {showFinance ? <label>Сумма<input value={form.amount} onChange={(event) => update("amount", event.target.value)} placeholder="18600" /></label> : null}
       <label>Комментарий<input value={form.comment} onChange={(event) => update("comment", event.target.value)} placeholder="Заметка" /></label>
       <button className="primary" type="submit">Принять коробку</button>
     </form>

@@ -4,7 +4,7 @@ const { pathToFileURL } = require("node:url");
 const { registerUserIpc } = require("./users-store.cjs");
 
 const isDev = !app.isPackaged;
-const packagedAppPath = path.join(app.getAppPath(), "out", "users", "index.html");
+const packagedAppPath = path.join(app.getAppPath(), "out", "users.html");
 const appUrl = process.env.CFLOW_USERS_APP_URL || (isDev ? "http://localhost:3000/users" : pathToFileURL(packagedAppPath).toString());
 
 function isAllowedUrl(targetUrl) {

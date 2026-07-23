@@ -323,12 +323,17 @@ h2 {
   gap: 10px;
 }
 
-.operation-board {
+.operation-board,
+.page-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: 18px;
   align-items: stretch;
   padding: 10px 0 18px;
+}
+
+.page-header {
+  align-items: center;
 }
 
 .scan-card {
@@ -374,12 +379,23 @@ h2 {
   background: var(--danger-soft);
 }
 
-.main-grid {
+.main-grid,
+.tab-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
   gap: 18px;
   margin-top: 18px;
   align-items: start;
+}
+
+.tab-grid {
+  margin-top: 0;
+}
+
+.dashboard-page,
+.single-page {
+  display: grid;
+  gap: 18px;
 }
 
 .left-flow {
@@ -843,6 +859,27 @@ h2 {
   padding: 16px;
 }
 
+.report-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.report-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+  padding: 13px 14px;
+}
+
+.report-list span {
+  color: var(--muted);
+  font-weight: 750;
+}
+
 .finance-grid span,
 .finance-grid strong {
   display: block;
@@ -948,7 +985,8 @@ h2 {
     font-size: 0;
   }
 
-  .main-grid {
+  .main-grid,
+  .tab-grid {
     grid-template-columns: 1fr;
   }
 
@@ -990,6 +1028,7 @@ h2 {
 
   .topbar,
   .operation-board,
+  .page-header,
   .auth-form,
   .action-form-grid,
   .action-form-inline,

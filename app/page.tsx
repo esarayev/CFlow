@@ -435,6 +435,86 @@ export default function Home() {
     }
   }
 
+  function openBoxDetail(id: string) {
+    setSelectedId(id);
+    setDetailModal({ type: "box", id });
+  }
+
+  const operationPanel = (
+    <article className="panel intake-panel">
+      <div className="panel-head">
+        <div>
+          <span className="eyebrow">Живая операция</span>
+          <h2>{actionTitle(actionMode)}</h2>
+        </div>
+      </div>
+      <div className="quick-actions">
+        <button className={actionMode === "receive" ? "primary" : ""} type="button" onClick={() => setAction("receive")}>Принять товар</button>
+        <button className={actionMode === "client" ? "primary" : ""} type="button" onClick={() => setAction("client")}>Добавить клиента</button>
+        <button className={actionMode === "issue" ? "primary" : ""} type="button" onClick={() => setAction("issue")}>Выдать товар</button>
+        <button className={actionMode === "move" ? "primary" : ""} type="button" onClick={() => setAction("move")}>Переместить</button>
+        <button className={actionMode === "status" ? "primary" : ""} type="button" onClick={() => setAction("status")}>Статус</button>
+        <button className={actionMode === "shipment" ? "primary" : ""} type="button" onClick={() => setAction("shipment")}>Создать отправку</button>
+        {showFinance ? <button className={actionMode === "payment" ? "primary" : ""} type="button" onClick={() => setAction("payment")}>Принять оплату</button> : null}
+      </div>
+      <ActionForm
+        mode={actionMode}
+        form={form}
+        setForm={setForm}
+        selectedBox={selectedBox}
+        showFinance={showFinance}
+        trackRef={trackRef}
+        onSubmit={submitAction}
+      />
+    </article>
+  );
+
+  const detailsPanel = selectedBox ? (
+    <aside className="details" aria-label="Детали коробки">
+      <div className="details-photo">
+        <span>{selectedBox.photo ? "Фото прикреплено" : "Фото коробки"}</span>
+      </div>
+      <div className="details-head">
+        <div>
+          <span className="eyebrow">Карточка коробки</span>
+          <h2>{selectedBox.client}</h2>
+        </div>
+        <span className={`status ${isProblem(selectedBox) ? "danger" : ""}`}>{selectedBox.status}</span>
+      </div>
+      <dl className="details-list">
+        <div><dt>ID</dt><dd>{selectedBox.id}</dd></div>
+        <div><dt>Трек</dt><dd>{selectedBox.track}</dd></div>
+        <div><dt>Код</dt><dd>{selectedBox.code || "Не указан"}</dd></div>
+        <div><dt>Телефон</dt><dd>{selectedBox.phone}</dd></div>
+        <div><dt>Вес</dt><dd>{selectedBox.weight}</dd></div>
+        <div><dt>Размеры</dt><dd>{selectedBox.dimensions || "Не указаны"}</dd></div>
+        <div><dt>Место</dt><dd>{selectedBox.place}</dd></div>
+        <div><dt>Маршрут</dt><dd>{selectedBox.route}</dd></div>
+        <div><dt>Оплата</dt><dd>{showFinance ? selectedBox.payment : "Скрыто"}</dd></div>
+        <div><dt>Ответственный</dt><dd>{selectedBox.owner}</dd></div>
+        <div><dt>Комментарий</dt><dd>{selectedBox.comment || "Нет"}</dd></div>
+      </dl>
+      <div className="detail-actions">
+        <button type="button" className="primary" onClick={() => setAction("issue")}>Выдать</button>
+        <button type="button" onClick={() => setAction("move")}>Переместить</button>
+        <button type="button" onClick={() => setAction("problem")}>Проблема</button>
+      </div>
+    </aside>
+  ) : null;
+
+  const pageCopy: Record<string, { title: string; lead: string }> = {
+    Dashboard: { title: "Пульс карго-точки", lead: "Главные показатели, последние действия и быстрый вход в приемку." },
+    Коробки: { title: "Коробки", lead: "Приемка, выдача, перемещение, статус и карточки всех грузов." },
+    Клиенты: { title: "Клиенты", lead: "Контакты, история клиента и связанные коробки." },
+    Склад: { title: "Склад", lead: "Зоны хранения, заполненность и размещение коробок." },
+    Отправки: { title: "Отправки", lead: "Контейнеры, машины, авиа и состав партий." },
+    Финансы: { title: "Финансы", lead: "Оплаты, долги, ожидаемые суммы и доход." },
+    Отчеты: { title: "Отчеты", lead: "Срезы по работе точки, сотрудникам, грузам и деньгам." },
+    Настройки: { title: "Настройки", lead: "Сервисные параметры приложения и информация о хранении данных." },
+  };
+
+  const currentPage = pageCopy[activeNav] || pageCopy.Dashboard;
+
   if (!sessionUser) {
     return (
       <main className="auth-shell">
@@ -510,129 +590,89 @@ export default function Home() {
             />
           </label>
           <div className="top-actions">
-            <button type="button" onClick={() => setAction("receive")}>Принять</button>
-            <button type="button" className="primary" onClick={() => setAction("issue")}>Выдать</button>
+            <button type="button" onClick={() => { setActiveNav("Коробки"); setAction("receive"); }}>Принять</button>
+            <button type="button" className="primary" onClick={() => { setActiveNav("Коробки"); setAction("issue"); }}>Выдать</button>
           </div>
         </header>
 
         {notice ? <p className="app-notice">{notice}</p> : null}
         {error ? <p className="app-error">{error}</p> : null}
 
-        <section className="operation-board">
+        <section className="page-header">
           <div>
             <p className="eyebrow">{activeNav}</p>
-            <h1>Операционный центр карго-точки</h1>
-            <p className="lead">
-              Все действия сохраняются в базе CFlow: приемка, выдача, перемещение, клиенты, отправки, оплаты и история.
-            </p>
+            <h1>{currentPage.title}</h1>
+            <p className="lead">{currentPage.lead}</p>
           </div>
-          <div className="scan-card">
-            <span>Быстрое действие</span>
-            <strong>Сканировать трек или QR</strong>
-            <p>Оператор начинает приемку или выдачу без переходов по меню.</p>
-            <button className="primary" type="button" onClick={openScanner}>Открыть сканер</button>
-          </div>
-        </section>
-
-        <section className="metrics-grid" aria-label="Ключевые показатели">
-          {metrics.map((metric) => (
-            <article className={`metric ${metric.tone}`} key={metric.label}>
-              <span>{metric.label}</span>
-              <strong>{metric.value}</strong>
-              <p>{metric.delta}</p>
-            </article>
-          ))}
-        </section>
-
-        <section className="main-grid">
-          <div className="left-flow">
-            <article className="panel intake-panel">
-              <div className="panel-head">
-                <div>
-                  <span className="eyebrow">Живая операция</span>
-                  <h2>{actionTitle(actionMode)}</h2>
-                </div>
-              </div>
-              <div className="quick-actions">
-                <button className={actionMode === "receive" ? "primary" : ""} type="button" onClick={() => setAction("receive")}>Принять товар</button>
-                <button className={actionMode === "client" ? "primary" : ""} type="button" onClick={() => setAction("client")}>Добавить клиента</button>
-                <button className={actionMode === "issue" ? "primary" : ""} type="button" onClick={() => setAction("issue")}>Выдать товар</button>
-                <button className={actionMode === "move" ? "primary" : ""} type="button" onClick={() => setAction("move")}>Переместить</button>
-                <button className={actionMode === "status" ? "primary" : ""} type="button" onClick={() => setAction("status")}>Статус</button>
-                <button className={actionMode === "shipment" ? "primary" : ""} type="button" onClick={() => setAction("shipment")}>Создать отправку</button>
-                {showFinance ? <button className={actionMode === "payment" ? "primary" : ""} type="button" onClick={() => setAction("payment")}>Принять оплату</button> : null}
-              </div>
-              <ActionForm
-                mode={actionMode}
-                form={form}
-                setForm={setForm}
-                selectedBox={selectedBox}
-                showFinance={showFinance}
-                trackRef={trackRef}
-                onSubmit={submitAction}
-              />
-            </article>
-
-            {activeNav === "Клиенты" ? (
-              <ClientsPanel clients={filteredClients} onOpenClient={(id) => setDetailModal({ type: "client", id })} />
-            ) : activeNav === "Склад" ? (
-              <WarehousePanel zones={data.warehouse} />
-            ) : activeNav === "Отправки" ? (
-              <ShipmentsPanel shipments={data.shipments} />
-            ) : activeNav === "Финансы" && showFinance ? (
-              <FinancePanel finances={data.finances} />
-            ) : activeNav === "Настройки" ? (
-              <SettingsPanel />
-            ) : (
-              <BoxesPanel
-                boxes={filteredBoxes}
-                selectedId={selectedId}
-                onOpenBox={(id) => {
-                  setSelectedId(id);
-                  setDetailModal({ type: "box", id });
-                }}
-              />
-            )}
-
-            <div className="split-panels">
-              <WarehousePanel zones={data.warehouse} compact />
-              <ActivityPanel activity={data.activity} />
+          {activeNav === "Dashboard" ? (
+            <div className="scan-card">
+              <span>Быстрое действие</span>
+              <strong>Сканировать трек или QR</strong>
+              <p>Оператор начинает приемку без переходов по меню.</p>
+              <button className="primary" type="button" onClick={openScanner}>Открыть сканер</button>
             </div>
-          </div>
-
-          {selectedBox ? (
-            <aside className="details" aria-label="Детали коробки">
-              <div className="details-photo">
-                <span>{selectedBox.photo ? "Фото прикреплено" : "Фото коробки"}</span>
-              </div>
-              <div className="details-head">
-                <div>
-                  <span className="eyebrow">Карточка коробки</span>
-                  <h2>{selectedBox.client}</h2>
-                </div>
-                <span className={`status ${isProblem(selectedBox) ? "danger" : ""}`}>{selectedBox.status}</span>
-              </div>
-              <dl className="details-list">
-                <div><dt>ID</dt><dd>{selectedBox.id}</dd></div>
-                <div><dt>Трек</dt><dd>{selectedBox.track}</dd></div>
-                <div><dt>Код</dt><dd>{selectedBox.code || "Не указан"}</dd></div>
-                <div><dt>Телефон</dt><dd>{selectedBox.phone}</dd></div>
-                <div><dt>Вес</dt><dd>{selectedBox.weight}</dd></div>
-                <div><dt>Размеры</dt><dd>{selectedBox.dimensions || "Не указаны"}</dd></div>
-                <div><dt>Место</dt><dd>{selectedBox.place}</dd></div>
-                <div><dt>Маршрут</dt><dd>{selectedBox.route}</dd></div>
-                <div><dt>Оплата</dt><dd>{showFinance ? selectedBox.payment : "Скрыто"}</dd></div>
-                <div><dt>Ответственный</dt><dd>{selectedBox.owner}</dd></div>
-                <div><dt>Комментарий</dt><dd>{selectedBox.comment || "Нет"}</dd></div>
-              </dl>
-              <div className="detail-actions">
-                <button type="button" className="primary" onClick={() => setAction("issue")}>Выдать</button>
-                <button type="button" onClick={() => setAction("move")}>Переместить</button>
-                <button type="button" onClick={() => setAction("problem")}>Проблема</button>
-              </div>
-            </aside>
           ) : null}
         </section>
+
+        {activeNav === "Dashboard" ? (
+          <section className="dashboard-page">
+            <section className="metrics-grid" aria-label="Ключевые показатели">
+              {metrics.map((metric) => (
+                <article className={`metric ${metric.tone}`} key={metric.label}>
+                  <span>{metric.label}</span>
+                  <strong>{metric.value}</strong>
+                  <p>{metric.delta}</p>
+                </article>
+              ))}
+            </section>
+            <div className="split-panels">
+              <BoxesPanel boxes={filteredBoxes.slice(0, 6)} selectedId={selectedId} onOpenBox={openBoxDetail} />
+              <ActivityPanel activity={data.activity} />
+            </div>
+            <div className="split-panels">
+              <WarehousePanel zones={data.warehouse} compact />
+              {showFinance ? <FinancePanel finances={data.finances} /> : <ClientsPanel clients={filteredClients.slice(0, 5)} onOpenClient={(id) => setDetailModal({ type: "client", id })} />}
+            </div>
+          </section>
+        ) : activeNav === "Коробки" ? (
+          <section className="tab-grid">
+            <div className="left-flow">
+              {operationPanel}
+              <BoxesPanel boxes={filteredBoxes} selectedId={selectedId} onOpenBox={openBoxDetail} />
+            </div>
+            {detailsPanel}
+          </section>
+        ) : activeNav === "Клиенты" ? (
+          <section className="single-page">
+            <ClientsPanel clients={filteredClients} onOpenClient={(id) => setDetailModal({ type: "client", id })} />
+          </section>
+        ) : activeNav === "Склад" ? (
+          <section className="single-page">
+            <WarehousePanel zones={data.warehouse} />
+            <BoxesPanel boxes={filteredBoxes} selectedId={selectedId} onOpenBox={openBoxDetail} />
+          </section>
+        ) : activeNav === "Отправки" ? (
+          <section className="tab-grid">
+            <div className="left-flow">
+              {operationPanel}
+              <ShipmentsPanel shipments={data.shipments} />
+            </div>
+            {detailsPanel}
+          </section>
+        ) : activeNav === "Финансы" && showFinance ? (
+          <section className="single-page">
+            <FinancePanel finances={data.finances} />
+            <ActivityPanel activity={data.activity} />
+          </section>
+        ) : activeNav === "Отчеты" && showFinance ? (
+          <section className="single-page">
+            <ReportsPanel data={data} finances={data.finances} />
+          </section>
+        ) : activeNav === "Настройки" ? (
+          <section className="single-page">
+            <SettingsPanel />
+          </section>
+        ) : null}
         {detailModal ? (
           <DetailModal
             box={modalBox}
@@ -641,10 +681,7 @@ export default function Home() {
             boxActivity={modalBoxActivity}
             showFinance={showFinance}
             onClose={() => setDetailModal(null)}
-            onOpenBox={(id) => {
-              setSelectedId(id);
-              setDetailModal({ type: "box", id });
-            }}
+            onOpenBox={openBoxDetail}
             onDeleteBox={deleteBox}
           />
         ) : null}
@@ -875,6 +912,31 @@ function FinancePanel({ finances }: { finances: FinanceData }) {
         <div><span>Ожидается</span><strong>{money(finances.expectedToday)}</strong></div>
         <div><span>Расход</span><strong>{money(finances.expensesToday)}</strong></div>
         <div><span>Долг</span><strong>{money(finances.debt)}</strong></div>
+      </div>
+    </article>
+  );
+}
+
+function ReportsPanel({ data, finances }: { data: CflowData; finances: FinanceData }) {
+  const activeBoxes = data.boxes.filter((box) => box.status !== "Выдано").length;
+  const issuedBoxes = data.boxes.filter((box) => box.status === "Выдано").length;
+  const unknownBoxes = data.boxes.filter((box) => box.status === "Без клиента").length;
+  const totalWeight = data.boxes.reduce((sum, box) => sum + chargeableWeight(box), 0);
+
+  return (
+    <article className="panel">
+      <div className="panel-head compact"><div><span className="eyebrow">Отчеты</span><h2>Сводка точки</h2></div></div>
+      <div className="finance-grid">
+        <div><span>Активные коробки</span><strong>{activeBoxes}</strong></div>
+        <div><span>Выдано</span><strong>{issuedBoxes}</strong></div>
+        <div><span>Без клиента</span><strong>{unknownBoxes}</strong></div>
+        <div><span>Расчетный вес</span><strong>{Math.round(totalWeight * 10) / 10} кг</strong></div>
+      </div>
+      <div className="report-list">
+        <div><strong>Долг клиентов</strong><span>{money(finances.debt)}</span></div>
+        <div><strong>Ожидается оплат</strong><span>{money(finances.expectedToday)}</span></div>
+        <div><strong>Отправок создано</strong><span>{data.shipments.length}</span></div>
+        <div><strong>Проблемных коробок</strong><span>{data.boxes.filter(isProblem).length}</span></div>
       </div>
     </article>
   );

@@ -23,5 +23,5 @@ contextBridge.exposeInMainWorld("cflowData", {
   createClient: (payload) => ipcRenderer.invoke("cflow-data:create-client", payload),
   createShipment: (payload) => ipcRenderer.invoke("cflow-data:create-shipment", payload),
   recordPayment: (payload) => ipcRenderer.invoke("cflow-data:record-payment", payload),
-  resetDemo: () => ipcRenderer.invoke("cflow-data:reset-demo"),
+  deleteBox: (payload) => ipcRenderer.invoke("cflow-data:delete-box", payload),
 });

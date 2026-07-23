@@ -89,6 +89,7 @@ type ApiResult = {
 };
 
 type ActionMode = "receive" | "issue" | "move" | "client" | "shipment" | "payment" | "problem";
+type DetailModalState = { type: "box"; id: string } | { type: "client"; id: string } | null;
 
 type ActionFormState = {
   track: string;
@@ -128,7 +129,7 @@ declare global {
       createClient: (payload: Record<string, string>) => Promise<ApiResult>;
       createShipment: (payload: Record<string, string>) => Promise<ApiResult>;
       recordPayment: (payload: Record<string, string>) => Promise<ApiResult>;
-      resetDemo: () => Promise<ApiResult>;
+      deleteBox: (payload: Record<string, string>) => Promise<ApiResult>;
     };
   }
 }
@@ -171,6 +172,7 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+  const [detailModal, setDetailModal] = useState<DetailModalState>(null);
   const [loginName, setLoginName] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -229,6 +231,15 @@ export default function Home() {
       Object.values(client).some((value) => String(value || "").toLowerCase().includes(normalized)),
     );
   }, [data.clients, query]);
+
+  const modalBox = detailModal?.type === "box" ? data.boxes.find((box) => box.id === detailModal.id) : undefined;
+  const modalClient = detailModal?.type === "client" ? data.clients.find((client) => client.id === detailModal.id) : undefined;
+  const modalClientBoxes = useMemo(() => {
+    if (!modalClient) return [];
+    return data.boxes.filter((box) =>
+      box.clientId === modalClient.id || box.phone === modalClient.phone || box.client === modalClient.name,
+    );
+  }, [data.boxes, modalClient]);
 
   const metrics = [
     { label: "В работе", value: String(data.boxes.filter((box) => box.status !== "Выдано").length), delta: `${data.boxes.length} всего`, tone: "neutral" },
@@ -345,16 +356,30 @@ export default function Home() {
     }
   }
 
-  async function resetDemoData() {
-    if (!window.cflowData) return;
-    await runApi(window.cflowData.resetDemo(), "База очищена. Можно начинать работу с нуля");
-  }
-
   function openScanner() {
     setActiveNav("Коробки");
     setAction("receive");
     setTimeout(() => trackRef.current?.focus(), 0);
     setNotice("Сканер готов: отсканируйте трек сразу в поле приемки");
+  }
+
+  async function deleteBox(boxId: string) {
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+
+    const confirmed = window.confirm(`Удалить коробку ${boxId} полностью из базы? Это действие нельзя отменить.`);
+    if (!confirmed) return;
+
+    const result = await runApi(
+      window.cflowData.deleteBox({ boxId, user: currentUserName() }),
+      "Коробка удалена из базы",
+    );
+    if (result.ok) {
+      setDetailModal(null);
+      setSelectedId("");
+    }
   }
 
   if (!sessionUser) {
@@ -495,7 +520,7 @@ export default function Home() {
             </article>
 
             {activeNav === "Клиенты" ? (
-              <ClientsPanel clients={filteredClients} />
+              <ClientsPanel clients={filteredClients} onOpenClient={(id) => setDetailModal({ type: "client", id })} />
             ) : activeNav === "Склад" ? (
               <WarehousePanel zones={data.warehouse} />
             ) : activeNav === "Отправки" ? (
@@ -503,9 +528,16 @@ export default function Home() {
             ) : activeNav === "Финансы" && showFinance ? (
               <FinancePanel finances={data.finances} />
             ) : activeNav === "Настройки" ? (
-              <SettingsPanel onReset={resetDemoData} />
+              <SettingsPanel />
             ) : (
-              <BoxesPanel boxes={filteredBoxes} selectedId={selectedId} setSelectedId={setSelectedId} />
+              <BoxesPanel
+                boxes={filteredBoxes}
+                selectedId={selectedId}
+                onOpenBox={(id) => {
+                  setSelectedId(id);
+                  setDetailModal({ type: "box", id });
+                }}
+              />
             )}
 
             <div className="split-panels">
@@ -546,6 +578,20 @@ export default function Home() {
             </aside>
           ) : null}
         </section>
+        {detailModal ? (
+          <DetailModal
+            box={modalBox}
+            client={modalClient}
+            clientBoxes={modalClientBoxes}
+            showFinance={showFinance}
+            onClose={() => setDetailModal(null)}
+            onOpenBox={(id) => {
+              setSelectedId(id);
+              setDetailModal({ type: "box", id });
+            }}
+            onDeleteBox={deleteBox}
+          />
+        ) : null}
       </section>
     </main>
   );
@@ -664,7 +710,7 @@ function ActionForm({
   );
 }
 
-function BoxesPanel({ boxes, selectedId, setSelectedId }: { boxes: BoxItem[]; selectedId: string; setSelectedId: (id: string) => void }) {
+function BoxesPanel({ boxes, selectedId, onOpenBox }: { boxes: BoxItem[]; selectedId: string; onOpenBox: (id: string) => void }) {
   return (
     <article className="panel">
       <div className="panel-head compact">
@@ -676,7 +722,7 @@ function BoxesPanel({ boxes, selectedId, setSelectedId }: { boxes: BoxItem[]; se
       </div>
       <div className="box-list">
         {boxes.map((box) => (
-          <button className={selectedId === box.id ? "box-row selected" : "box-row"} type="button" key={box.id} onClick={() => setSelectedId(box.id)}>
+          <button className={selectedId === box.id ? "box-row selected" : "box-row"} type="button" key={box.id} onClick={() => onOpenBox(box.id)}>
             <span className="box-id">{box.id}</span>
             <span><strong>{box.client}</strong><small>{box.track} · {box.phone}</small></span>
             <span className="hide-mobile">{box.place}</span>
@@ -689,18 +735,18 @@ function BoxesPanel({ boxes, selectedId, setSelectedId }: { boxes: BoxItem[]; se
   );
 }
 
-function ClientsPanel({ clients }: { clients: ClientItem[] }) {
+function ClientsPanel({ clients, onOpenClient }: { clients: ClientItem[]; onOpenClient: (id: string) => void }) {
   return (
     <article className="panel">
       <div className="panel-head compact"><div><span className="eyebrow">Клиенты</span><h2>Клиентская база</h2></div></div>
       <div className="entity-list">
         {clients.map((client) => (
-          <div className="entity-row" key={client.id}>
+          <button className="entity-row entity-button" type="button" key={client.id} onClick={() => onOpenClient(client.id)}>
             <span className="box-id">{client.id}</span>
             <strong>{client.name}</strong>
             <span>{client.phone || "Без телефона"}</span>
             <span>{client.telegram || "Telegram не указан"}</span>
-          </div>
+          </button>
         ))}
         {!clients.length ? <p className="empty-state">Клиенты не найдены</p> : null}
       </div>
@@ -762,15 +808,108 @@ function FinancePanel({ finances }: { finances: FinanceData }) {
   );
 }
 
-function SettingsPanel({ onReset }: { onReset: () => void }) {
+function SettingsPanel() {
   return (
     <article className="panel">
       <div className="panel-head compact"><div><span className="eyebrow">Настройки</span><h2>Сервис</h2></div></div>
       <p className="lead">Данные приложения хранятся локально в папке пользователя Windows. Новая установка стартует с пустой базы, без демо-коробок и тестовых клиентов.</p>
-      <div className="detail-actions">
-        <button type="button" onClick={onReset}>Очистить базу</button>
-      </div>
     </article>
+  );
+}
+
+function DetailModal({
+  box,
+  client,
+  clientBoxes,
+  showFinance,
+  onClose,
+  onOpenBox,
+  onDeleteBox,
+}: {
+  box?: BoxItem;
+  client?: ClientItem;
+  clientBoxes: BoxItem[];
+  showFinance: boolean;
+  onClose: () => void;
+  onOpenBox: (id: string) => void;
+  onDeleteBox: (id: string) => void;
+}) {
+  const isClientModal = Boolean(client);
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section
+        className="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-label={isClientModal ? "Карточка клиента" : "Карточка коробки"}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <div className="modal-head">
+          <div>
+            <span className="eyebrow">{isClientModal ? "Карточка клиента" : "Карточка коробки"}</span>
+            <h2>{client?.name || box?.client || "Объект не найден"}</h2>
+          </div>
+          <button type="button" aria-label="Закрыть" onClick={onClose}>Закрыть</button>
+        </div>
+
+        {box ? (
+          <>
+            <div className="modal-summary">
+              <span className={`status ${isProblem(box) ? "danger" : ""}`}>{box.status}</span>
+              <strong>{box.id}</strong>
+              <span>{box.track}</span>
+            </div>
+            <dl className="details-list modal-list">
+              <div><dt>Клиент</dt><dd>{box.client}</dd></div>
+              <div><dt>Телефон</dt><dd>{box.phone || "Не указан"}</dd></div>
+              <div><dt>Место</dt><dd>{box.place}</dd></div>
+              <div><dt>Вес</dt><dd>{box.weight}</dd></div>
+              <div><dt>Размеры</dt><dd>{box.dimensions || "Не указаны"}</dd></div>
+              <div><dt>Маршрут</dt><dd>{box.route}</dd></div>
+              <div><dt>Оплата</dt><dd>{showFinance ? `${box.payment}${box.amount ? ` · ${money(box.amount)}` : ""}` : "Скрыто"}</dd></div>
+              <div><dt>Ответственный</dt><dd>{box.owner}</dd></div>
+              <div><dt>Комментарий</dt><dd>{box.comment || "Нет"}</dd></div>
+            </dl>
+            <div className="modal-danger">
+              <div>
+                <strong>Ошибочный товар</strong>
+                <p>Удаление полностью уберет коробку из базы и отправок.</p>
+              </div>
+              <button className="danger-button" type="button" onClick={() => onDeleteBox(box.id)}>Удалить коробку</button>
+            </div>
+          </>
+        ) : null}
+
+        {client ? (
+          <>
+            <dl className="details-list modal-list">
+              <div><dt>ID</dt><dd>{client.id}</dd></div>
+              <div><dt>Телефон</dt><dd>{client.phone || "Не указан"}</dd></div>
+              <div><dt>Telegram</dt><dd>{client.telegram || "Не указан"}</dd></div>
+              <div><dt>Комментарий</dt><dd>{client.comments || "Нет"}</dd></div>
+              <div><dt>Коробок</dt><dd>{clientBoxes.length}</dd></div>
+            </dl>
+            <div className="modal-section">
+              <div className="panel-head compact">
+                <h2>Коробки клиента</h2>
+                <span className="counter">{clientBoxes.length} найдено</span>
+              </div>
+              <div className="box-list">
+                {clientBoxes.map((item) => (
+                  <button className="box-row modal-box-row" type="button" key={item.id} onClick={() => onOpenBox(item.id)}>
+                    <span className="box-id">{item.id}</span>
+                    <span><strong>{item.track}</strong><small>{item.place}</small></span>
+                    <span className={`status ${isProblem(item) ? "danger" : ""}`}>{item.status}</span>
+                  </button>
+                ))}
+                {!clientBoxes.length ? <p className="empty-state">У клиента пока нет коробок</p> : null}
+              </div>
+            </div>
+          </>
+        ) : null}
+      </section>
+    </div>
   );
 }
 

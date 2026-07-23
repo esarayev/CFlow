@@ -434,8 +434,22 @@ function recordPayment(app, input) {
   return publicSnapshot(app);
 }
 
-function resetDemo(app) {
-  const data = emptyStore();
+function deleteBox(app, input) {
+  const data = readStore(app);
+  const boxId = String(input.boxId || "").trim();
+  if (!boxId) return { ok: false, error: "Выберите коробку" };
+
+  const box = data.boxes.find((item) => item.id === boxId);
+  if (!box) return { ok: false, error: "Коробка не найдена" };
+
+  data.boxes = data.boxes.filter((item) => item.id !== boxId);
+  data.shipments = data.shipments
+    .map((shipment) => ({
+      ...shipment,
+      boxes: Array.isArray(shipment.boxes) ? shipment.boxes.filter((id) => id !== boxId) : [],
+    }))
+    .filter((shipment) => shipment.boxes.length > 0);
+  logActivity(data, "Удаление", `${boxId} удалена из базы`, input.user || "Оператор");
   writeStore(app, data);
   return publicSnapshot(app);
 }
@@ -449,7 +463,7 @@ function registerCflowIpc(ipcMain, app) {
   ipcMain.handle("cflow-data:create-client", (_event, payload) => createClient(app, payload || {}));
   ipcMain.handle("cflow-data:create-shipment", (_event, payload) => createShipment(app, payload || {}));
   ipcMain.handle("cflow-data:record-payment", (_event, payload) => recordPayment(app, payload || {}));
-  ipcMain.handle("cflow-data:reset-demo", () => resetDemo(app));
+  ipcMain.handle("cflow-data:delete-box", (_event, payload) => deleteBox(app, payload || {}));
 }
 
 module.exports = {

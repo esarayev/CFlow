@@ -77,6 +77,13 @@ const memoryClientCodes = new Map<string, CflowClientCode>();
 const memorySettings = new Map<string, string>();
 const memoryDeletedBoxes = new Map<string, CflowTombstone>();
 
+const CLIENT_CODE_STATIC_PREFIX = "奇瑞QR 18911759229";
+const CLIENT_CODE_CITY_PREFIX = "AST";
+const CLIENT_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const CLIENT_CODE_MAX_NUMBER = 999;
+const CLIENT_CODE_CAPACITY = CLIENT_CODE_ALPHABET.length * CLIENT_CODE_MAX_NUMBER;
+const DEFAULT_CHINA_ADDRESS = "浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞";
+
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
     ...init,
@@ -109,6 +116,18 @@ function isCorruptText(value: unknown) {
 function cleanName(value: unknown, fallback = "") {
   const name = String(value || "").trim();
   return name && !isCorruptText(name) ? name : fallback;
+}
+
+function codeSuffixFromIndex(index: number) {
+  const letter = CLIENT_CODE_ALPHABET[Math.floor(index / CLIENT_CODE_MAX_NUMBER)];
+  const number = (index % CLIENT_CODE_MAX_NUMBER) + 1;
+  if (!letter) return "";
+  return `${CLIENT_CODE_CITY_PREFIX} ${letter}${String(number).padStart(3, "0")}`;
+}
+
+function fullClientCodeFromIndex(index: number) {
+  const suffix = codeSuffixFromIndex(index);
+  return suffix ? `${CLIENT_CODE_STATIC_PREFIX} ${suffix}` : "";
 }
 
 function nowIso() {
@@ -651,13 +670,13 @@ async function listClientCodes(env: Env) {
 
 async function getSettings(env: Env) {
   await ensureTables(env.DB);
-  if (!env.DB) return { chinaAddress: memorySettings.get("chinaAddress") || "" };
+  if (!env.DB) return { chinaAddress: memorySettings.get("chinaAddress") || DEFAULT_CHINA_ADDRESS };
   const result = await env.DB.prepare("SELECT key, value FROM app_settings").all<{ key: string; value: string }>();
   const settings: Record<string, string> = {};
   (result.results || []).forEach((item) => {
     settings[item.key] = item.value;
   });
-  return { chinaAddress: settings.chinaAddress || "" };
+  return { chinaAddress: settings.chinaAddress || DEFAULT_CHINA_ADDRESS };
 }
 
 async function saveSettings(env: Env, settings: Record<string, unknown>) {
@@ -673,6 +692,58 @@ async function saveSettings(env: Env, settings: Record<string, unknown>) {
   `).bind(chinaAddress, nowIso()).run();
 }
 
+async function generateAndReserveClientCode(env: Env, client: CflowClient) {
+  await ensureTables(env.DB);
+  const clients = await listClients(env);
+  const codeRows = await listClientCodes(env);
+  const used = new Set<string>();
+  clients.forEach((item) => {
+    if (item.client_code) used.add(item.client_code.toLowerCase());
+  });
+  codeRows.forEach((item) => {
+    if (item.status === "assigned" || item.client_id) used.add(item.code.toLowerCase());
+  });
+
+  const assignedAt = nowIso();
+  for (let index = 0; index < CLIENT_CODE_CAPACITY; index += 1) {
+    const code = fullClientCodeFromIndex(index);
+    if (!code || used.has(code.toLowerCase())) continue;
+
+    const codeItem: CflowClientCode = {
+      id: `CC-${CLIENT_CODE_CITY_PREFIX}-${String(index + 1).padStart(6, "0")}`,
+      code,
+      status: "assigned",
+      client_id: client.id,
+      client_name: client.name,
+      assigned_at: assignedAt,
+      created_at: assignedAt,
+      updated_at: assignedAt,
+    };
+
+    if (!env.DB) {
+      memoryClientCodes.set(code.toLowerCase(), codeItem);
+      return code;
+    }
+
+    const updated = await env.DB.prepare(`
+      UPDATE client_codes
+      SET status = 'assigned', client_id = ?, client_name = ?, assigned_at = ?, updated_at = ?
+      WHERE code = ? AND status = 'available' AND client_id = ''
+    `).bind(client.id, client.name, assignedAt, assignedAt, code).run();
+    if ((updated.meta?.changes || 0) > 0) return code;
+
+    const inserted = await env.DB.prepare(`
+      INSERT OR IGNORE INTO client_codes (id, code, status, client_id, client_name, assigned_at, created_at, updated_at)
+      VALUES (?, ?, 'assigned', ?, ?, ?, ?, ?)
+    `).bind(codeItem.id, code, client.id, client.name, assignedAt, assignedAt, assignedAt).run();
+    if ((inserted.meta?.changes || 0) > 0) return code;
+
+    used.add(code.toLowerCase());
+  }
+
+  throw new Error("Лимит кодов AST исчерпан");
+}
+
 async function issueCodeToClient(env: Env, query: { id?: string; telegramId?: string }) {
   const existing = await findClient(env, { id: String(query.id || ""), telegramId: String(query.telegramId || "") });
   if (!existing) throw new Error("Клиент не найден");
@@ -682,46 +753,7 @@ async function issueCodeToClient(env: Env, query: { id?: string; telegramId?: st
 
   let nextCode = existing.client_code;
   if (!nextCode) {
-    await ensureTables(env.DB);
-    let codeItem: CflowClientCode | null = null;
-    if (env.DB) {
-      const candidates = await env.DB.prepare("SELECT * FROM client_codes WHERE status = 'available' AND client_id = '' ORDER BY created_at ASC LIMIT 8").all<CflowClientCode>();
-      for (const candidate of candidates.results || []) {
-        const assignedAt = nowIso();
-        const result = await env.DB.prepare(`
-          UPDATE client_codes
-          SET status = 'assigned', client_id = ?, client_name = ?, assigned_at = ?, updated_at = ?
-          WHERE code = ? AND status = 'available' AND client_id = ''
-        `).bind(existing.id, existing.name, assignedAt, assignedAt, candidate.code).run();
-        if ((result.meta?.changes || 0) > 0) {
-          codeItem = {
-            ...candidate,
-            status: "assigned",
-            client_id: existing.id,
-            client_name: existing.name,
-            assigned_at: assignedAt,
-            updated_at: assignedAt,
-          };
-          break;
-        }
-      }
-    } else {
-      codeItem = [...memoryClientCodes.values()].find((item) => item.status === "available" && !item.client_id) || null;
-    }
-    if (!codeItem) throw new Error("Свободные коды закончились");
-    nextCode = codeItem.code;
-    const now = nowIso();
-    codeItem.status = "assigned";
-    codeItem.client_id = existing.id;
-    codeItem.client_name = existing.name;
-    codeItem.assigned_at = now;
-    codeItem.updated_at = now;
-    memoryClientCodes.set(codeItem.code.toLowerCase(), codeItem);
-    if (env.DB && !codeItem.client_id) {
-      await env.DB.prepare("UPDATE client_codes SET status = 'assigned', client_id = ?, client_name = ?, assigned_at = ?, updated_at = ? WHERE code = ?")
-        .bind(existing.id, existing.name, now, now, codeItem.code)
-        .run();
-    }
+    nextCode = await generateAndReserveClientCode(env, existing);
   }
 
   return await upsertClient(env, {

@@ -5,6 +5,13 @@ const { execFileSync } = require("node:child_process");
 const crypto = require("node:crypto");
 const { validateSession } = require("./users-store.cjs");
 
+const CLIENT_CODE_STATIC_PREFIX = "奇瑞QR 18911759229";
+const CLIENT_CODE_CITY_PREFIX = "AST";
+const CLIENT_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const CLIENT_CODE_MAX_NUMBER = 999;
+const CLIENT_CODE_CAPACITY = CLIENT_CODE_ALPHABET.length * CLIENT_CODE_MAX_NUMBER;
+const DEFAULT_CHINA_ADDRESS = "浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞";
+
 function dataDir(app) {
   return path.join(app.getPath("appData"), "CFlow");
 }
@@ -51,6 +58,43 @@ function isCorruptText(value) {
 function cleanName(value, fallback = "") {
   const name = String(value || "").trim();
   return name && !isCorruptText(name) ? name : fallback;
+}
+
+function codeSuffixFromIndex(index) {
+  const letter = CLIENT_CODE_ALPHABET[Math.floor(index / CLIENT_CODE_MAX_NUMBER)];
+  const number = (index % CLIENT_CODE_MAX_NUMBER) + 1;
+  if (!letter) return "";
+  return `${CLIENT_CODE_CITY_PREFIX} ${letter}${String(number).padStart(3, "0")}`;
+}
+
+function fullClientCodeFromIndex(index) {
+  const suffix = codeSuffixFromIndex(index);
+  return suffix ? `${CLIENT_CODE_STATIC_PREFIX} ${suffix}` : "";
+}
+
+function generatedCodeIndex(value) {
+  const match = String(value || "").trim().match(/AST\s+([A-Z])(\d{3})$/i);
+  if (!match) return -1;
+  const letterIndex = CLIENT_CODE_ALPHABET.indexOf(match[1].toUpperCase());
+  const number = Number(match[2]);
+  if (letterIndex < 0 || number < 1 || number > CLIENT_CODE_MAX_NUMBER) return -1;
+  return letterIndex * CLIENT_CODE_MAX_NUMBER + number - 1;
+}
+
+function generateNextClientCode(data) {
+  const used = new Set();
+  (data.clients || []).forEach((client) => {
+    if (client.clientCode) used.add(String(client.clientCode).toLowerCase());
+  });
+  (data.clientCodes || []).forEach((item) => {
+    if (item.status === "assigned" || item.clientId) used.add(String(item.code || "").toLowerCase());
+  });
+
+  for (let index = 0; index < CLIENT_CODE_CAPACITY; index += 1) {
+    const code = fullClientCodeFromIndex(index);
+    if (code && !used.has(code.toLowerCase())) return code;
+  }
+  throw new Error("Лимит кодов AST исчерпан");
 }
 
 function readWindowsUserEnv(name) {
@@ -395,7 +439,7 @@ function emptyStore() {
     clientCodes: [],
     deletedBoxes: [],
     settings: {
-      chinaAddress: "",
+      chinaAddress: DEFAULT_CHINA_ADDRESS,
     },
   };
 }
@@ -712,7 +756,7 @@ async function addClientCodes(app, input) {
 
 async function saveWarehouseAddress(app, input) {
   const data = readStore(app);
-  const chinaAddress = String(input.chinaAddress || "").trim();
+  const chinaAddress = String(input.chinaAddress || DEFAULT_CHINA_ADDRESS).trim();
   if (!chinaAddress) return { ok: false, error: "Укажите адрес склада в Китае" };
   data.settings = { ...(data.settings || {}), chinaAddress, updatedAt: nowIso() };
   logActivity(data, "Адрес склада", "Адрес склада в Китае обновлен", input.user || "Оператор");
@@ -727,19 +771,31 @@ async function issueClientCode(app, input) {
   const client = data.clients.find((item) => item.id === clientId);
   if (!client) return { ok: false, error: "Клиент не найден" };
 
-  const chinaAddress = String(data.settings?.chinaAddress || "").trim();
+  const chinaAddress = String(data.settings?.chinaAddress || DEFAULT_CHINA_ADDRESS).trim();
   if (!chinaAddress) return { ok: false, error: "Сначала сохраните адрес склада в Китае на дашборде" };
 
   const now = nowIso();
   if (!client.clientCode) {
-    const codeItem = (data.clientCodes || []).find((item) => item.status !== "assigned" && !item.clientId && item.code);
-    if (!codeItem) return { ok: false, error: "Свободные коды закончились. Внесите новые коды на дашборде" };
+    const code = generateNextClientCode(data);
+    const codeKey = code.toLowerCase();
+    const existingCodeItem = (data.clientCodes || []).find((item) => String(item.code || "").toLowerCase() === codeKey);
+    const codeItem = existingCodeItem || normalizeClientCodeItem({
+      id: `CC-${CLIENT_CODE_CITY_PREFIX}-${String(generatedCodeIndex(code) + 1).padStart(6, "0")}`,
+      code,
+      status: "assigned",
+      clientId: client.id,
+      clientName: client.name,
+      assignedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    }, data.clientCodes.length);
     codeItem.status = "assigned";
     codeItem.clientId = client.id;
     codeItem.clientName = client.name;
     codeItem.assignedAt = now;
     codeItem.updatedAt = now;
-    client.clientCode = codeItem.code;
+    if (!existingCodeItem) data.clientCodes.unshift(codeItem);
+    client.clientCode = code;
   }
 
   client.chinaAddress = client.chinaAddress || chinaAddress;

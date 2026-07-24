@@ -158,6 +158,10 @@ type ActionFormState = {
   nextStatus: string;
 };
 
+const clientCodeCapacity = 26 * 999;
+const generatedCodePattern = /AST\s+[A-Z]\d{3}$/i;
+const defaultChinaAddress = "浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞";
+
 declare global {
   interface Window {
     cflowUsers?: {
@@ -193,7 +197,7 @@ const fallbackData: CflowData = {
   finances: { incomeToday: 0, expectedToday: 0, expensesToday: 0, debt: 0 },
   activity: [],
   clientCodes: [],
-  settings: { chinaAddress: "" },
+  settings: { chinaAddress: defaultChinaAddress },
 };
 
 const navItems = ["Dashboard", "Коробки", "Клиенты", "Склад", "Отправки", "Финансы", "Отчеты", "Настройки"];
@@ -271,8 +275,7 @@ export default function Home() {
   const [sessionToken, setSessionToken] = useState("");
   const [detailModal, setDetailModal] = useState<DetailModalState>(null);
   const [dashboardPanel, setDashboardPanel] = useState<DashboardPanel>(null);
-  const [codesInput, setCodesInput] = useState("");
-  const [addressInput, setAddressInput] = useState("");
+  const [addressInput, setAddressInput] = useState(defaultChinaAddress);
   const [loginName, setLoginName] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -311,7 +314,7 @@ export default function Home() {
   }, [sessionUser, sessionToken]);
 
   useEffect(() => {
-    setAddressInput(data.settings?.chinaAddress || "");
+    setAddressInput(data.settings?.chinaAddress || defaultChinaAddress);
   }, [data.settings?.chinaAddress]);
 
   useEffect(() => {
@@ -357,9 +360,18 @@ export default function Home() {
       item.boxId === modalBox.id || item.text.includes(modalBox.id) || item.text.includes(modalBox.track) || Boolean(modalBox.code && item.text.includes(modalBox.code)),
     );
   }, [data.activity, modalBox]);
-  const availableCodeCount = useMemo(() => data.clientCodes.filter((item) => item.status !== "assigned" && !item.clientId).length, [data.clientCodes]);
-  const assignedCodeCount = data.clientCodes.length - availableCodeCount;
-  const warehouseAddress = data.settings?.chinaAddress || "";
+  const assignedCodeCount = useMemo(() => {
+    const assigned = new Set<string>();
+    data.clients.forEach((client) => {
+      if (client.clientCode && generatedCodePattern.test(client.clientCode)) assigned.add(client.clientCode.toLowerCase());
+    });
+    data.clientCodes.forEach((item) => {
+      if ((item.status === "assigned" || item.clientId) && generatedCodePattern.test(item.code)) assigned.add(item.code.toLowerCase());
+    });
+    return assigned.size;
+  }, [data.clientCodes, data.clients]);
+  const availableCodeCount = Math.max(clientCodeCapacity - assignedCodeCount, 0);
+  const warehouseAddress = data.settings?.chinaAddress || defaultChinaAddress;
 
   const matchedClient = useMemo(() => {
     const code = form.clientCode.trim().toLowerCase();
@@ -470,20 +482,6 @@ export default function Home() {
     applyResult(result);
     if (result.ok && result.sync?.status === "connected") {
       setNotice(`Синхронизация выполнена. Клиентов в облаке: ${result.sync.pulledClients || 0}`);
-    }
-  }
-
-  async function addClientCodes(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!window.cflowData) {
-      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
-      return;
-    }
-    const result = await window.cflowData.addClientCodes(securePayload({ codes: codesInput }));
-    applyResult(result);
-    if (result.ok) {
-      setCodesInput("");
-      setNotice("Коды клиентов добавлены в общий пул");
     }
   }
 
@@ -663,23 +661,17 @@ export default function Home() {
       <div className="panel-head compact">
         <div>
           <span className="eyebrow">Коды клиентов</span>
-          <h2>{dashboardPanel === "codes" ? "Внести коды клиента" : "Адрес склада в Китае"}</h2>
+          <h2>{dashboardPanel === "codes" ? "Автогенерация кодов" : "Адрес склада в Китае"}</h2>
         </div>
         <button type="button" onClick={() => setDashboardPanel(null)}>Закрыть</button>
       </div>
       {dashboardPanel === "codes" ? (
-        <form className="dashboard-admin-form" onSubmit={addClientCodes}>
-          <label>
-            Список кодов
-            <textarea
-              value={codesInput}
-              onChange={(event) => setCodesInput(event.target.value)}
-              placeholder={"CF-1001\nCF-1002\nCF-1003"}
-            />
-          </label>
-          <p>Можно вставить списком, через пробел, запятую или с новой строки. Дубли будут пропущены.</p>
-          <button className="primary" type="submit">Добавить в пул</button>
-        </form>
+        <div className="dashboard-admin-form">
+          <p>Постоянная часть склада: 奇瑞QR 18911759229</p>
+          <p>Уникальная часть выдается автоматически: AST A001, AST A002 ... AST A999, затем AST B001.</p>
+          <p>Следующий код закрепляется за клиентом навсегда и больше не используется повторно.</p>
+          <button className="primary" type="button" disabled>Автогенерация включена</button>
+        </div>
       ) : (
         <form className="dashboard-admin-form" onSubmit={saveWarehouseAddress}>
           <label>
@@ -874,11 +866,11 @@ export default function Home() {
               <p>Оператор начинает приемку без переходов по меню.</p>
               <button className="primary" type="button" onClick={openScanner}>Открыть сканер</button>
               <div className="code-pool-mini">
-                <span>Коды: {availableCodeCount} свободно · {assignedCodeCount} выдано</span>
+                <span>Автокоды: {availableCodeCount} осталось · {assignedCodeCount} выдано</span>
                 <span>{warehouseAddress ? "Адрес склада задан" : "Адрес склада не задан"}</span>
               </div>
               <div className="scan-card-actions">
-                <button type="button" onClick={() => setDashboardPanel("codes")}>Внести коды клиента</button>
+                <button type="button" onClick={() => setDashboardPanel("codes")}>Схема кодов</button>
                 <button type="button" onClick={() => setDashboardPanel("address")}>Адрес склада</button>
               </div>
             </div>
@@ -1351,10 +1343,10 @@ function DetailModal({
             <div className="modal-access-form">
               <div>
                 <strong>{client.clientCode ? "Код уже выдан" : "Автовыдача кода"}</strong>
-                <p>{client.clientCode ? `Код ${client.clientCode} закреплен за этим клиентом навсегда.` : "Система возьмет первый свободный код из пула и добавит общий адрес склада."}</p>
+                <p>{client.clientCode ? `Код ${client.clientCode} закреплен за этим клиентом навсегда.` : "Система сгенерирует следующий код AST по порядку и добавит общий адрес склада."}</p>
               </div>
               <div>
-                <span>Свободно кодов: {availableCodeCount}</span>
+                <span>Осталось автокодов: {availableCodeCount}</span>
                 <span>{warehouseAddress ? "Адрес склада готов" : "Сначала задайте адрес склада"}</span>
               </div>
               <button

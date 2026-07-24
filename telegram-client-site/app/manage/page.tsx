@@ -33,6 +33,10 @@ type SettingsData = {
 
 type ViewMode = "pending" | "all";
 
+const clientCodeCapacity = 26 * 999;
+const generatedCodePattern = /AST\s+[A-Z]\d{3}$/i;
+const defaultChinaAddress = "浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞";
+
 function getWebApp() {
   return (window as any).Telegram?.WebApp;
 }
@@ -113,7 +117,17 @@ export default function ManageMiniApp() {
   }, [initData]);
 
   const pendingClients = useMemo(() => clients.filter((client) => client.registrationStatus !== "approved"), [clients]);
-  const availableCodeCount = useMemo(() => clientCodes.filter((item) => item.status !== "assigned" && !item.clientId).length, [clientCodes]);
+  const assignedCodeCount = useMemo(() => {
+    const assigned = new Set<string>();
+    clients.forEach((client) => {
+      if (client.clientCode && generatedCodePattern.test(client.clientCode)) assigned.add(client.clientCode.toLowerCase());
+    });
+    clientCodes.forEach((item) => {
+      if ((item.status === "assigned" || item.clientId) && generatedCodePattern.test(item.code)) assigned.add(item.code.toLowerCase());
+    });
+    return assigned.size;
+  }, [clientCodes, clients]);
+  const availableCodeCount = Math.max(clientCodeCapacity - assignedCodeCount, 0);
   const filteredClients = useMemo(() => {
     const base = mode === "pending" ? pendingClients : clients;
     const needle = query.trim().toLowerCase();
@@ -276,14 +290,14 @@ export default function ManageMiniApp() {
               </div>
               <div className="manage-code-box">
                 <strong>{selectedClient.clientCode || "Код еще не выдан"}</strong>
-                <span>{selectedClient.chinaAddress || settings.chinaAddress || "Адрес склада пока не задан"}</span>
-                <small>Свободно кодов: {availableCodeCount}</small>
+                <span>{selectedClient.chinaAddress || settings.chinaAddress || defaultChinaAddress}</span>
+                <small>Осталось автокодов: {availableCodeCount}</small>
               </div>
               <label>Комментарий<input value={draft.comments} onChange={(event) => update("comments", event.target.value)} placeholder="Примечание менеджера" /></label>
               <button
                 className="primary"
                 type="button"
-                disabled={isLoading || Boolean(selectedClient.clientCode) || availableCodeCount <= 0 || !settings.chinaAddress}
+                disabled={isLoading || Boolean(selectedClient.clientCode) || availableCodeCount <= 0}
                 onClick={issueCode}
               >
                 {selectedClient.clientCode ? "Код уже выдан" : "Выдать код"}

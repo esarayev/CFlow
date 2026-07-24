@@ -1,4 +1,5 @@
 const fs = require("node:fs");
+const https = require("node:https");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
@@ -57,20 +58,68 @@ function cloudConfig() {
   };
 }
 
+function httpJsonRequest(targetUrl, options = {}) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const body = options.body || "";
+    const request = https.request(targetUrl, {
+      method: options.method || "GET",
+      headers: {
+        ...(options.headers || {}),
+        ...(body ? { "content-length": Buffer.byteLength(body) } : {}),
+      },
+    }, (response) => {
+      let raw = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        raw += chunk;
+      });
+      response.on("end", () => {
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          finish({ ok: false, error: `cloud_http_${response.statusCode}` });
+          return;
+        }
+        try {
+          finish(JSON.parse(raw));
+        } catch {
+          finish({ ok: false, error: "cloud_bad_json" });
+        }
+      });
+    });
+    request.setTimeout(15000, () => {
+      request.destroy();
+      finish({ ok: false, error: "cloud_timeout" });
+    });
+    request.on("error", () => finish({ ok: false, error: "cloud_request_failed" }));
+    if (body) request.write(body);
+    request.end();
+  });
+}
+
 async function cloudRequest(pathname, options = {}) {
   const { apiUrl, adminToken } = cloudConfig();
-  if (!apiUrl || !adminToken || typeof fetch !== "function") {
+  if (!apiUrl || !adminToken) {
     return { ok: false, error: !adminToken ? "cloud_token_missing" : "cloud_unavailable" };
   }
 
   try {
-    const response = await fetch(`${apiUrl}${pathname}`, {
+    const targetUrl = `${apiUrl}${pathname}`;
+    const requestOptions = {
       ...options,
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${adminToken}`,
         ...(options.headers || {}),
       },
+    };
+    if (typeof fetch !== "function") return await httpJsonRequest(targetUrl, requestOptions);
+    const response = await fetch(`${apiUrl}${pathname}`, {
+      ...requestOptions,
     });
     if (!response.ok) return { ok: false, error: `cloud_http_${response.status}` };
     return await response.json();

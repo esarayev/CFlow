@@ -27,10 +27,10 @@ declare global {
 }
 
 const stageLabels: Record<CargoStage, { flag: string; title: string; text: string }> = {
-  china_warehouse: { flag: "🇨🇳", title: "Склад в Китае", text: "Товар принят китайским складом по вашему коду." },
-  in_transit: { flag: "✈️", title: "В пути", text: "Груз отправлен из Китая и движется к Казахстану." },
-  kazakhstan: { flag: "🇰🇿", title: "В Казахстане", text: "Груз прибыл в Казахстан и проходит обработку." },
-  astana: { flag: "📍", title: "Астана, карго", text: "Можно оплатить доставку и забрать товар." },
+  china_warehouse: { flag: "CN", title: "Склад в Китае", text: "Товар принят китайским складом по вашему коду." },
+  in_transit: { flag: "AIR", title: "В пути", text: "Груз отправлен из Китая и движется к Казахстану." },
+  kazakhstan: { flag: "KZ", title: "В Казахстане", text: "Груз прибыл в Казахстан и проходит обработку." },
+  astana: { flag: "AST", title: "Астана, карго", text: "Можно оплатить доставку и забрать товар." },
 };
 
 const emptyProfile: ClientProfile = { registered: false, approved: false, client: null, boxes: [] };
@@ -262,11 +262,11 @@ export default function ClientMiniApp() {
                     {profile.boxes.map((box) => (
                       <div className="client-box" key={box.id}>
                         <div className="client-box-top">
-                          <div><strong>{box.track}</strong><span>{box.id} · {box.weight || "вес уточняется"}</span></div>
-                          <b>{stageLabels[box.stage]?.flag || "•"}</b>
+                          <div><strong>{box.track}</strong><span>{box.id} - {box.weight || "вес уточняется"}</span></div>
+                          <b>{stageLabels[box.stage]?.flag || "-"}</b>
                         </div>
                         <p>{box.status}</p>
-                        {box.amount ? <small>{box.clientRate ? `${box.clientRate} · ${box.amount}` : box.amount}</small> : null}
+                        {box.amount ? <small>{box.clientRate ? `${box.clientRate} - ${box.amount}` : box.amount}</small> : null}
                         <StageProgress active={box.stage} />
                       </div>
                     ))}

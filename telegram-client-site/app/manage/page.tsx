@@ -255,14 +255,14 @@ export default function ManageMiniApp() {
               {filteredClients.map((client) => (
                 <button className={client.id === selectedId ? "manage-row active" : "manage-row"} type="button" key={client.id} onClick={() => setSelectedId(client.id)}>
                   <strong>{client.name}</strong>
-                  <span>{client.phone || "без телефона"} · {client.telegram || "Telegram не указан"}</span>
-                  <small>{sourceLabel(client.registrationSource)} · {statusLabel(client.registrationStatus)}{client.clientCode ? ` · ${client.clientCode}` : ""}</small>
+                  <span>{client.phone || "без телефона"} - {client.telegram || "Telegram не указан"}</span>
+                  <small>{sourceLabel(client.registrationSource)} - {statusLabel(client.registrationStatus)}{client.clientCode ? ` - ${client.clientCode}` : ""}</small>
                 </button>
               ))}
               {!filteredClients.length ? (
                 <div className="empty-state">
                   <strong>{mode === "pending" ? "Новых заявок нет" : "Клиентов пока нет"}</strong>
-                  <span>{mode === "pending" ? "Переключитесь на “Все клиенты”, чтобы увидеть уже подтвержденных и ручных клиентов." : "Откройте основную программу CFlow, чтобы она отправила локальных клиентов в облако."}</span>
+                  <span>{mode === "pending" ? "Переключитесь на раздел Все клиенты, чтобы увидеть уже подтвержденных и ручных клиентов." : "Откройте основную программу CFlow, чтобы она отправила локальных клиентов в облако."}</span>
                 </div>
               ) : null}
             </div>
@@ -272,7 +272,7 @@ export default function ManageMiniApp() {
             <form className="client-card client-form manage-form" onSubmit={approve}>
               <div className="client-section-head">
                 <h2>{selectedClient.name}</h2>
-                <span>{sourceLabel(selectedClient.registrationSource)} · {statusLabel(selectedClient.registrationStatus)}</span>
+                <span>{sourceLabel(selectedClient.registrationSource)} - {statusLabel(selectedClient.registrationStatus)}</span>
               </div>
               <div className="manage-code-box">
                 <strong>{selectedClient.clientCode || "Код еще не выдан"}</strong>

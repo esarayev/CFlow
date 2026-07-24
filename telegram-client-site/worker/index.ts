@@ -734,8 +734,8 @@ function publicBox(box: CflowBox) {
     id: String(payload.id || box.id),
     track: String(payload.track || box.track || ""),
     weight: String(payload.weight || ""),
-    amount: amount ? `${amount} ₸` : "",
-    clientRate: clientRate ? `${clientRate} ₸/кг` : "",
+    amount: amount ? `${amount} T` : "",
+    clientRate: clientRate ? `${clientRate} T/кг` : "",
     status: String(payload.status || box.status || ""),
     stage: boxStage(String(payload.status || box.status || "")),
     updated_at: String(payload.updatedAt || box.updated_at),
@@ -981,14 +981,31 @@ async function handleApprove(request: Request, env: Env) {
 
 async function handleConfigure(request: Request, env: Env) {
   if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
-  if (!env.CFLOW_TELEGRAM_BOT_TOKEN) return json({ ok: false, error: "Нет токена Telegram" }, { status: 500 });
-  const webAppUrl = env.CFLOW_TELEGRAM_WEBAPP_URL || `${new URL(request.url).origin}/`;
-  const response = await fetch(`https://api.telegram.org/bot${env.CFLOW_TELEGRAM_BOT_TOKEN}/setChatMenuButton`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ menu_button: { type: "web_app", text: "Кабинет", web_app: { url: webAppUrl } } }),
-  });
-  return json({ ok: response.ok, webAppUrl, telegram: await response.json() }, { status: response.ok ? 200 : 502 });
+  const origin = new URL(request.url).origin;
+  const clientWebAppUrl = env.CFLOW_TELEGRAM_WEBAPP_URL || `${origin}/`;
+  const manageWebAppUrl = `${origin}/manage`;
+  const results: Record<string, unknown> = {};
+
+  if (env.CFLOW_TELEGRAM_BOT_TOKEN) {
+    const clientResponse = await fetch(`https://api.telegram.org/bot${env.CFLOW_TELEGRAM_BOT_TOKEN}/setChatMenuButton`, {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ menu_button: { type: "web_app", text: "CFlow", web_app: { url: clientWebAppUrl } } }),
+    });
+    results.client = await clientResponse.json();
+  }
+
+  if (env.CFLOW_MANAGE_TELEGRAM_BOT_TOKEN) {
+    const manageResponse = await fetch(`https://api.telegram.org/bot${env.CFLOW_MANAGE_TELEGRAM_BOT_TOKEN}/setChatMenuButton`, {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ menu_button: { type: "web_app", text: "CFlow Manage", web_app: { url: manageWebAppUrl } } }),
+    });
+    results.manage = await manageResponse.json();
+  }
+
+  const ok = Boolean((results.client as { ok?: boolean } | undefined)?.ok || (results.manage as { ok?: boolean } | undefined)?.ok);
+  return json({ ok, clientWebAppUrl, manageWebAppUrl, telegram: results }, { status: ok ? 200 : 502 });
 }
 
 const worker = {

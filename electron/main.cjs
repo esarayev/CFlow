@@ -10,6 +10,7 @@ const appUrl = process.env.CFLOW_APP_URL || (isDev ? "http://localhost:3000" : p
 const allowedOrigins = new Set([
   "http://localhost:3000",
   "https://cflow-cargo.f7zp26dshq.chatgpt.site",
+  "https://cflow-miniapp.yegor-sarayev.workers.dev",
 ]);
 
 function isAllowedUrl(targetUrl) {

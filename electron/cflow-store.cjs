@@ -53,7 +53,7 @@ function readWindowsUserEnv(name) {
 function cloudConfig() {
   const adminToken = String(process.env.CFLOW_ADMIN_TOKEN || readWindowsUserEnv("CFLOW_ADMIN_TOKEN") || "");
   return {
-    apiUrl: String(process.env.CFLOW_CLOUD_API_URL || process.env.CFLOW_API_URL || "https://es-logistics-client.f7zp26dshq.chatgpt.site").replace(/\/+$/, ""),
+    apiUrl: String(process.env.CFLOW_CLOUD_API_URL || process.env.CFLOW_API_URL || readWindowsUserEnv("CFLOW_CLOUD_API_URL") || "https://cflow-miniapp.yegor-sarayev.workers.dev").replace(/\/+$/, ""),
     adminToken,
   };
 }

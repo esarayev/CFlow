@@ -39,6 +39,20 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function isCorruptText(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/[\uFFFD]/.test(text)) return true;
+  if (/[РС][\u0080-\u00BF]/.test(text)) return true;
+  const questionMarks = (text.match(/\?/g) || []).length;
+  return questionMarks >= 2 && questionMarks / text.length > 0.2;
+}
+
+function cleanName(value, fallback = "") {
+  const name = String(value || "").trim();
+  return name && !isCorruptText(name) ? name : fallback;
+}
+
 function readWindowsUserEnv(name) {
   if (process.platform !== "win32") return "";
   try {
@@ -133,9 +147,10 @@ async function cloudRequest(pathname, options = {}) {
 }
 
 function normalizeCloudClient(client) {
+  const fallbackName = cleanName(client.telegram || client.telegramUsername) || cleanName(client.phone) || "Клиент";
   return {
     id: String(client.id || "").trim(),
-    name: String(client.name || client.fullName || "").trim(),
+    name: cleanName(client.name || client.fullName, fallbackName),
     phone: String(client.phone || "").trim(),
     telegram: String(client.telegram || client.telegramUsername || "").trim(),
     telegramId: String(client.telegramId || "").trim(),
@@ -483,7 +498,7 @@ async function publicSnapshot(app) {
 }
 
 function upsertClient(data, input) {
-  const name = String(input.client || input.name || "").trim();
+  const name = cleanName(input.client || input.name);
   const phone = String(input.phone || "").trim();
   if (!name) throw new Error("Укажите имя клиента");
 

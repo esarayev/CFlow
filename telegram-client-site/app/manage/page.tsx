@@ -160,7 +160,7 @@ export default function ManageMiniApp() {
     setIsLoading(true);
     fetch("/api/manage/clients/approve", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json; charset=utf-8" },
       body: JSON.stringify({
         initData,
         clientId: selectedClient.id,
@@ -187,7 +187,7 @@ export default function ManageMiniApp() {
     setIsLoading(true);
     fetch("/api/manage/clients/issue-code", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json; charset=utf-8" },
       body: JSON.stringify({
         initData,
         clientId: selectedClient.id,

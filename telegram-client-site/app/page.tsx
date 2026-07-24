@@ -34,7 +34,7 @@ const stageLabels: Record<CargoStage, { flag: string; title: string; text: strin
 };
 
 const emptyProfile: ClientProfile = { registered: false, approved: false, client: null, boxes: [] };
-const profileCacheKey = "cflow-client-profile";
+const profileCacheKey = "cflow-client-profile-v2";
 
 function clientName(user?: TelegramUser) {
   return [user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.username || "";
@@ -149,7 +149,7 @@ export default function ClientMiniApp() {
     setIsLoading(true);
     fetch("/api/client/register", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json; charset=utf-8" },
       body: JSON.stringify({ initData, name: form.fullName, phone: form.whatsappPhone }),
     })
       .then((response) => response.json())

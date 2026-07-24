@@ -97,6 +97,20 @@ function normalizeId(value = "") {
   return String(value || "").trim();
 }
 
+function isCorruptText(value: unknown) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/[\uFFFD]/.test(text)) return true;
+  if (/[РС][\u0080-\u00BF]/.test(text)) return true;
+  const questionMarks = (text.match(/\?/g) || []).length;
+  return questionMarks >= 2 && questionMarks / text.length > 0.2;
+}
+
+function cleanName(value: unknown, fallback = "") {
+  const name = String(value || "").trim();
+  return name && !isCorruptText(name) ? name : fallback;
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -354,9 +368,10 @@ function fromInput(input: Record<string, unknown>, existing?: CflowClient | null
   const id = normalizeId(String(input.id || existing?.id || makeClientId()));
   const registrationSource = String(input.registrationSource || existing?.registration_source || "manual") === "telegram" ? "telegram" : "manual";
   const registrationStatus = String(input.registrationStatus || input.status || existing?.registration_status || (registrationSource === "telegram" ? "pending" : "approved")) as RegistrationStatus;
+  const fallbackName = cleanName(existing?.name) || cleanName(input.telegram || input.telegramUsername) || cleanName(input.phone) || "Клиент";
   return {
     id,
-    name: String(input.name || input.fullName || existing?.name || "").trim(),
+    name: cleanName(input.name || input.fullName, fallbackName),
     phone: String(input.phone || existing?.phone || "").trim(),
     telegram_username: String(input.telegram || input.telegramUsername || existing?.telegram_username || "").trim(),
     telegram_id: String(input.telegramId || existing?.telegram_id || "").trim(),

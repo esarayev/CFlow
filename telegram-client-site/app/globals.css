@@ -294,6 +294,26 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   word-break: break-word;
 }
 .neu-address { color: var(--text); font-size: 13px; letter-spacing: 0; }
+.neu-copy-line {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 12px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--neu-bg);
+  box-shadow: 5px 5px 10px var(--neu-dark), -5px -5px 10px var(--neu-light);
+  color: var(--accent);
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 800;
+}
+.neu-copy-line:active {
+  transform: scale(.99);
+  box-shadow: inset 4px 4px 10px var(--neu-dark), inset -4px -4px 10px var(--neu-light);
+}
 .neu-card:not(.pending-card):not(.client-badge):not(.shipment-card):not(.empty-shipments) { padding: 22px; }
 
 .shipment-card { display: grid; gap: 12px; padding: 18px 20px; }

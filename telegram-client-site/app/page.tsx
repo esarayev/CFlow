@@ -165,10 +165,15 @@ export default function ClientMiniApp() {
       .finally(() => setIsLoading(false));
   }
 
+  async function copyText(value: string, message: string) {
+    if (!value) return;
+    await navigator.clipboard.writeText(value);
+    setNotice(message);
+  }
+
   async function copyAddress() {
     if (!profile.client) return;
-    await navigator.clipboard.writeText(`Код клиента: ${profile.client.code}\nАдрес склада: ${profile.client.chinaAddress}`);
-    setNotice("Скопировано в буфер обмена");
+    await copyText(`Код клиента: ${profile.client.code}\nАдрес склада: ${profile.client.chinaAddress}`, "Код и адрес скопированы");
   }
 
   if (showIntro) {
@@ -215,7 +220,14 @@ export default function ClientMiniApp() {
         {notice ? <p className="neu-toast inline">{notice}</p> : null}
         {error ? <p className="neu-error">{error}</p> : null}
         {isLoading || !hasCheckedProfile ? <p className="neu-toast inline">Загружаем кабинет...</p> : null}
-        {activeTab === "code" ? <CodeScreen client={client} onCopy={copyAddress} /> : <StatusesScreen boxes={profile.boxes} />}
+        {activeTab === "code" ? (
+          <CodeScreen
+            client={client}
+            onCopy={copyAddress}
+            onCopyCode={() => copyText(client?.code || "", "Код клиента скопирован")}
+            onCopyAddress={() => copyText(client?.chinaAddress || "", "Адрес склада скопирован")}
+          />
+        ) : <StatusesScreen boxes={profile.boxes} />}
       </section>
       <BottomNav activeTab={activeTab} onTab={setActiveTab} />
     </main>
@@ -309,7 +321,17 @@ function Header({ activeTab, name, latestStage }: { activeTab: AppTab; name: str
   );
 }
 
-function CodeScreen({ client, onCopy }: { client: ClientProfile["client"]; onCopy: () => void }) {
+function CodeScreen({
+  client,
+  onCopy,
+  onCopyCode,
+  onCopyAddress,
+}: {
+  client: ClientProfile["client"];
+  onCopy: () => void;
+  onCopyCode: () => void;
+  onCopyAddress: () => void;
+}) {
   return (
     <section className="neu-stack slide-up">
       <article className="neu-card client-badge">
@@ -319,11 +341,13 @@ function CodeScreen({ client, onCopy }: { client: ClientProfile["client"]; onCop
       <article className="neu-card">
         <div className="neu-label">Ваш код клиента</div>
         <div className="neu-code">{client?.code || "Код еще не выдан"}</div>
+        <button className="neu-copy-line" type="button" disabled={!client?.code} onClick={onCopyCode}>📋 Скопировать код</button>
         <small>🔒 Персональный — только для вас</small>
       </article>
       <article className="neu-card">
         <div className="neu-label">Адрес склада в Китае</div>
         <div className="neu-address">{client?.chinaAddress || "Адрес появится после подтверждения регистрации"}</div>
+        <button className="neu-copy-line" type="button" disabled={!client?.chinaAddress} onClick={onCopyAddress}>📋 Скопировать адрес</button>
       </article>
       <button className="neu-accent copy" type="button" disabled={!client?.code || !client?.chinaAddress} onClick={onCopy}>📋 Скопировать код и адрес</button>
       <div className="neu-hint"><span>💡</span><p>При заказе в Китае вставьте код в поле получателя. По нему склад поймет, что посылка ваша.</p></div>

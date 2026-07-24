@@ -102,6 +102,7 @@ type ApiResult = {
   ok: boolean;
   error?: string;
   data?: CflowData;
+  sync?: { status: string; pulledClients?: number };
 };
 
 type ActionMode = "receive" | "issue" | "move" | "client" | "shipment" | "payment" | "problem" | "status";
@@ -237,6 +238,7 @@ export default function Home() {
   const [actionMode, setActionMode] = useState<ActionMode>("receive");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [syncStatus, setSyncStatus] = useState<{ status: string; pulledClients?: number } | null>(null);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [detailModal, setDetailModal] = useState<DetailModalState>(null);
   const [loginName, setLoginName] = useState("");
@@ -355,8 +357,16 @@ export default function Home() {
       return;
     }
 
+    if (result.sync) {
+      setSyncStatus(result.sync);
+      if (result.sync.status === "cloud_token_missing") {
+        setError("Облако не подключено: в Windows не задан CFLOW_ADMIN_TOKEN. Telegram-заявки не подтянутся в десктоп.");
+      } else if (result.sync.status !== "connected") {
+        setError(`Облако не подключилось: ${result.sync.status}`);
+      }
+    }
     setData(result.data);
-    setError("");
+    if (!result.sync || result.sync.status === "connected") setError("");
   }
 
   async function unlock(event: FormEvent<HTMLFormElement>) {
@@ -399,6 +409,18 @@ export default function Home() {
     applyResult(result);
     if (result.ok) setNotice(success);
     return result;
+  }
+
+  async function syncNow() {
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+    const result = await window.cflowData.snapshot();
+    applyResult(result);
+    if (result.ok && result.sync?.status === "connected") {
+      setNotice(`Синхронизация выполнена. Клиентов в облаке: ${result.sync.pulledClients || 0}`);
+    }
   }
 
   function currentUserName() {
@@ -680,11 +702,13 @@ export default function Home() {
             />
           </label>
           <div className="top-actions">
+            <button type="button" onClick={syncNow}>Синхронизировать</button>
             <button type="button" onClick={() => { setActiveNav("Коробки"); setAction("receive"); }}>Принять</button>
             <button type="button" className="primary" onClick={() => { setActiveNav("Коробки"); setAction("issue"); }}>Выдать</button>
           </div>
         </header>
 
+        {syncStatus?.status === "connected" ? <p className="app-notice">Облако подключено. Клиентов в облаке: {syncStatus.pulledClients || 0}</p> : null}
         {notice ? <p className="app-notice">{notice}</p> : null}
         {error ? <p className="app-error">{error}</p> : null}
 

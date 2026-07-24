@@ -42,7 +42,9 @@ function cloudConfig() {
 
 async function cloudRequest(pathname, options = {}) {
   const { apiUrl, adminToken } = cloudConfig();
-  if (!apiUrl || !adminToken || typeof fetch !== "function") return null;
+  if (!apiUrl || !adminToken || typeof fetch !== "function") {
+    return { ok: false, error: !adminToken ? "cloud_token_missing" : "cloud_unavailable" };
+  }
 
   try {
     const response = await fetch(`${apiUrl}${pathname}`, {
@@ -53,10 +55,10 @@ async function cloudRequest(pathname, options = {}) {
         ...(options.headers || {}),
       },
     });
-    if (!response.ok) return null;
+    if (!response.ok) return { ok: false, error: `cloud_http_${response.status}` };
     return await response.json();
   } catch {
-    return null;
+    return { ok: false, error: "cloud_request_failed" };
   }
 }
 
@@ -141,6 +143,9 @@ function mergeById(items, incoming) {
 
 async function pullCloudSnapshot(data) {
   const result = await cloudRequest("/api/admin/snapshot");
+  if (!result?.ok) {
+    return { changed: false, status: result?.error || "cloud_unknown_error", pulledClients: 0 };
+  }
   const snapshot = result?.data || {};
   const clients = Array.isArray(snapshot.clients) ? snapshot.clients : [];
   let changed = false;
@@ -153,7 +158,7 @@ async function pullCloudSnapshot(data) {
   if (snapshot.finances && typeof snapshot.finances === "object") {
     data.finances = { ...data.finances, ...snapshot.finances };
   }
-  return changed;
+  return { changed, status: "connected", pulledClients: clients.length };
 }
 
 async function pushCloudClient(client, source = "manual") {
@@ -407,13 +412,14 @@ function logActivity(data, title, text, user, boxId = "") {
 
 async function publicSnapshot(app) {
   const data = readStore(app);
-  const changed = await pullCloudSnapshot(data);
+  const sync = await pullCloudSnapshot(data);
   await pushCloudClients(data);
   await pushCloudSnapshot(data);
-  if (changed) writeStore(app, data);
+  if (sync.changed) writeStore(app, data);
   const warehouse = deriveWarehouse(data.boxes);
   return {
     ok: true,
+    sync,
     data: {
       ...data,
       warehouse,

@@ -675,7 +675,7 @@ async function createClient(app, input) {
     const client = upsertClient(data, input);
     logActivity(data, "Клиент", `Создан или обновлен клиент ${client.name}`, input.user || "Оператор");
     writeStore(app, data);
-    await pushCloudClient(client, "manual");
+    await pushCloudClient(client, client.registrationSource || input.registrationSource || "manual");
     return publicSnapshot(app);
   } catch (error) {
     return { ok: false, error: error.message };

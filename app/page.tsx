@@ -45,11 +45,14 @@ type ClientItem = {
   name: string;
   phone: string;
   telegram?: string;
+  telegramId?: string;
   comments?: string;
   clientCode?: string;
   chinaAddress?: string;
   clientRate?: number;
   chinaRate?: number;
+  registrationSource?: string;
+  registrationStatus?: string;
 };
 
 type ActivityItem = {
@@ -421,6 +424,34 @@ export default function Home() {
     if (result.ok && result.sync?.status === "connected") {
       setNotice(`Синхронизация выполнена. Клиентов в облаке: ${result.sync.pulledClients || 0}`);
     }
+  }
+
+  async function issueClientAccess(client: ClientItem, clientCode: string, chinaAddress: string) {
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+    const cleanCode = clientCode.trim();
+    const cleanAddress = chinaAddress.trim();
+    if (!cleanCode || !cleanAddress) {
+      setError("Укажите код клиента и адрес склада в Китае.");
+      return;
+    }
+    const result = await window.cflowData.createClient({
+      id: client.id,
+      name: client.name,
+      phone: client.phone,
+      telegram: client.telegram || "",
+      telegramId: client.telegramId || "",
+      comments: client.comments || "",
+      clientCode: cleanCode,
+      chinaAddress: cleanAddress,
+      registrationSource: client.registrationSource || "manual",
+      registrationStatus: "approved",
+      user: currentUserName(),
+    });
+    applyResult(result);
+    if (result.ok) setNotice(`Код и адрес выданы клиенту ${client.name}`);
   }
 
   function currentUserName() {
@@ -798,6 +829,7 @@ export default function Home() {
             onOpenBox={openBoxDetail}
             onDeleteBox={deleteBox}
             onCopyText={copyText}
+            onIssueClientAccess={issueClientAccess}
           />
         ) : null}
       </section>
@@ -1084,6 +1116,7 @@ function DetailModal({
   onOpenBox,
   onDeleteBox,
   onCopyText,
+  onIssueClientAccess,
 }: {
   box?: BoxItem;
   client?: ClientItem;
@@ -1094,8 +1127,14 @@ function DetailModal({
   onOpenBox: (id: string) => void;
   onDeleteBox: (id: string) => void;
   onCopyText: (text: string, success: string) => void;
+  onIssueClientAccess: (client: ClientItem, clientCode: string, chinaAddress: string) => void;
 }) {
   const isClientModal = Boolean(client);
+  const [clientAccessForm, setClientAccessForm] = useState({ clientCode: client?.clientCode || "", chinaAddress: client?.chinaAddress || "" });
+
+  useEffect(() => {
+    setClientAccessForm({ clientCode: client?.clientCode || "", chinaAddress: client?.chinaAddress || "" });
+  }, [client?.id, client?.clientCode, client?.chinaAddress]);
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -1175,12 +1214,38 @@ function DetailModal({
             <dl className="details-list modal-list">
               <div><dt>ID</dt><dd>{client.id}</dd></div>
               <div><dt>Код клиента</dt><dd>{client.clientCode || "Не выдан"}</dd></div>
+              <div><dt>Статус заявки</dt><dd>{client.registrationStatus === "approved" ? "Подтвержден" : "Ожидает кода"}</dd></div>
               <div><dt>Телефон</dt><dd>{client.phone || "Не указан"}</dd></div>
               <div><dt>Telegram</dt><dd>{client.telegram || "Не указан"}</dd></div>
               <div><dt>Адрес склада Китай</dt><dd>{client.chinaAddress || "Не указан"}</dd></div>
               <div><dt>Комментарий</dt><dd>{client.comments || "Нет"}</dd></div>
               <div><dt>Коробок</dt><dd>{clientBoxes.length}</dd></div>
             </dl>
+            <form
+              className="modal-access-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                onIssueClientAccess(client, clientAccessForm.clientCode, clientAccessForm.chinaAddress);
+              }}
+            >
+              <label>
+                Код клиента
+                <input
+                  value={clientAccessForm.clientCode}
+                  onChange={(event) => setClientAccessForm((current) => ({ ...current, clientCode: event.target.value }))}
+                  placeholder="Например CF-1024"
+                />
+              </label>
+              <label>
+                Адрес склада в Китае
+                <input
+                  value={clientAccessForm.chinaAddress}
+                  onChange={(event) => setClientAccessForm((current) => ({ ...current, chinaAddress: event.target.value }))}
+                  placeholder="Адрес для покупок клиента"
+                />
+              </label>
+              <button className="primary" type="submit">Выдать код и адрес</button>
+            </form>
             <div className="detail-actions">
               <button className="primary" type="button" onClick={() => onCopyText(clientInstruction(client), "Инструкция клиенту скопирована")}>Скопировать инструкцию клиенту</button>
             </div>

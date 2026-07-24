@@ -613,6 +613,37 @@ h2 {
   margin-top: 18px;
 }
 
+.modal-access-form {
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--accent-soft);
+}
+
+.modal-access-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.modal-access-form input {
+  min-height: 42px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 12px;
+}
+
+.modal-access-form button {
+  min-height: 42px;
+}
+
 .auth-shell {
   display: grid;
   min-height: 100vh;
@@ -1251,6 +1282,7 @@ h2 {
   .auth-form,
   .action-form-grid,
   .action-form-inline,
+  .modal-access-form,
   .user-grid,
   .role-grid,
   .split-panels,

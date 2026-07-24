@@ -26,11 +26,11 @@ declare global {
   }
 }
 
-const stageLabels: Record<CargoStage, { flag: string; title: string; text: string }> = {
-  china_warehouse: { flag: "CN", title: "Склад в Китае", text: "Товар принят китайским складом по вашему коду." },
-  in_transit: { flag: "AIR", title: "В пути", text: "Груз отправлен из Китая и движется к Казахстану." },
-  kazakhstan: { flag: "KZ", title: "В Казахстане", text: "Груз прибыл в Казахстан и проходит обработку." },
-  astana: { flag: "AST", title: "Астана, карго", text: "Можно оплатить доставку и забрать товар." },
+const stageLabels: Record<CargoStage, { icon: string; title: string; text: string; step: number }> = {
+  china_warehouse: { icon: "🏭", title: "На складе в Китае", text: "Товар принят китайским складом по вашему коду.", step: 1 },
+  in_transit: { icon: "🚢", title: "В пути", text: "Груз отправлен из Китая и движется к Казахстану.", step: 2 },
+  kazakhstan: { icon: "📦", title: "В Казахстане", text: "Груз прибыл в Казахстан и проходит обработку.", step: 3 },
+  astana: { icon: "🏪", title: "В Астане на карго", text: "Можно оплатить доставку и забрать товар.", step: 4 },
 };
 
 const emptyProfile: ClientProfile = { registered: false, approved: false, client: null, boxes: [] };
@@ -53,8 +53,7 @@ function readCachedProfile(): ClientProfile {
 }
 
 function cacheProfile(profile: ClientProfile) {
-  if (typeof window === "undefined") return;
-  if (!profile.registered) return;
+  if (typeof window === "undefined" || !profile.registered) return;
   window.localStorage.setItem(profileCacheKey, JSON.stringify(profile));
 }
 
@@ -85,7 +84,6 @@ export default function ClientMiniApp() {
     const readTelegramContext = () => {
       const webApp = window.Telegram?.WebApp;
       const nextInitData = webApp?.initData || "";
-
       if (webApp && nextInitData) {
         webApp.ready();
         webApp.expand();
@@ -94,18 +92,15 @@ export default function ClientMiniApp() {
         setInitData(nextInitData);
         return;
       }
-
       attempts += 1;
       if (attempts < 30) {
         window.setTimeout(readTelegramContext, 100);
         return;
       }
-
       if (isMounted) setIsLoading(false);
     };
 
     readTelegramContext();
-
     return () => {
       isMounted = false;
     };
@@ -129,8 +124,9 @@ export default function ClientMiniApp() {
           const nextProfile = { registered: data.registered, approved: data.approved, client: data.client, boxes: data.boxes || [] };
           setProfile(nextProfile);
           cacheProfile(nextProfile);
+        } else {
+          setError(data.error || "Не удалось загрузить кабинет");
         }
-        else setError(data.error || "Не удалось загрузить кабинет");
       })
       .catch(() => setError("Не удалось подключиться к CFlow"))
       .finally(() => {
@@ -139,6 +135,7 @@ export default function ClientMiniApp() {
       });
   }, [initData]);
 
+  const client = profile.client;
   const latestStage = useMemo(() => {
     const stage = profile.boxes[0]?.stage || "china_warehouse";
     return stageLabels[stage];
@@ -171,24 +168,14 @@ export default function ClientMiniApp() {
   async function copyAddress() {
     if (!profile.client) return;
     await navigator.clipboard.writeText(`Код клиента: ${profile.client.code}\nАдрес склада: ${profile.client.chinaAddress}`);
-    setNotice("Код и адрес скопированы");
+    setNotice("Скопировано в буфер обмена");
   }
-
-  const client = profile.client;
 
   if (showIntro) {
     return (
       <main className="client-app intro-app">
         <section className="intro-screen">
-          <video
-            className="intro-video"
-            src="/cflow-intro.mp4"
-            autoPlay
-            muted
-            playsInline
-            preload="auto"
-            onEnded={() => setShowIntro(false)}
-          />
+          <video className="intro-video" src="/cflow-intro.mp4" autoPlay muted playsInline preload="auto" onEnded={() => setShowIntro(false)} />
           <div className="intro-overlay">
             <button className="intro-skip" type="button" onClick={() => setShowIntro(false)}>Продолжить</button>
           </div>
@@ -197,96 +184,205 @@ export default function ClientMiniApp() {
     );
   }
 
+  if (hasCheckedProfile && !profile.registered) {
+    return (
+      <main className="client-app neu-app">
+        <RegistrationScreen
+          form={form}
+          isLoading={isLoading}
+          notice={notice}
+          error={error}
+          onSubmit={submitRegistration}
+          onName={(value) => setForm((current) => ({ ...current, fullName: value }))}
+          onPhone={(value) => setForm((current) => ({ ...current, whatsappPhone: value }))}
+        />
+      </main>
+    );
+  }
+
+  if (profile.registered && !profile.approved) {
+    return (
+      <main className="client-app neu-app">
+        <PendingScreen name={client?.name || "Клиент"} phone={client?.phone || ""} notice={notice} error={error} isLoading={isLoading || !hasCheckedProfile} />
+      </main>
+    );
+  }
+
   return (
-    <main className="client-app">
-      <header className="client-shell-head">
-        <div className="brand-logo brand-logo-client"><img src="/cflow-client-logo.png" alt="CFlow" /></div>
-        {profile.registered ? <span className={profile.approved ? "client-pill success" : "client-pill"}>{profile.approved ? "Активен" : "На проверке"}</span> : null}
-      </header>
-
-      <section className="client-scroll">
-        <section className="client-hero">
-          <div>
-            <span>{profile.registered ? `${latestStage.flag} ${latestStage.title}` : "Быстрый старт"}</span>
-            <h1>{profile.registered ? client?.name || "Клиент" : "Получите код для покупок"}</h1>
-            <p>{profile.registered ? "Код, адрес склада и движение товаров в одном аккуратном кабинете." : "Заполните ФИО и WhatsApp. После проверки мы выдадим код клиента и адрес склада в Китае."}</p>
-          </div>
-        </section>
-
-        {notice ? <p className="client-notice">{notice}</p> : null}
-        {error ? <p className="client-error">{error}</p> : null}
-        {isLoading || !hasCheckedProfile ? <p className="client-notice">Загружаем кабинет...</p> : null}
-
-        {hasCheckedProfile && !profile.registered ? (
-          <form className="client-card client-form" onSubmit={submitRegistration}>
-            <label>ФИО<input value={form.fullName} onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))} placeholder="Фамилия Имя Отчество" required /></label>
-            <label>Номер WhatsApp<input value={form.whatsappPhone} onChange={(event) => setForm((current) => ({ ...current, whatsappPhone: event.target.value }))} placeholder="+7..." required /></label>
-            <button className="primary" type="submit">Отправить заявку</button>
-          </form>
-        ) : null}
-
-        {profile.registered ? (
-          <>
-            <nav className="client-tabs" aria-label="Разделы кабинета">
-              <button type="button" className={activeTab === "code" ? "active" : ""} onClick={() => setActiveTab("code")}>Код и адрес</button>
-              <button type="button" className={activeTab === "statuses" ? "active" : ""} onClick={() => setActiveTab("statuses")}>Статусы</button>
-            </nav>
-
-            {activeTab === "code" ? (
-              <section className="client-stack">
-                <article className="client-card client-status-card">
-                  <div className="client-section-head">
-                    <h2>{profile.approved ? "Данные для покупок" : "Заявка на проверке"}</h2>
-                    <span>{client?.phone || "WhatsApp не указан"}</span>
-                  </div>
-                  <p>{profile.approved ? "Указывайте код при каждой покупке. Так склад в Китае привяжет товар к вам." : "Менеджер проверит заявку и добавит ваш код и адрес склада."}</p>
-                </article>
-
-                <article className="client-card client-code-card">
-                  <div className="client-info-row"><span>Код клиента</span><strong>{client?.code || "Ожидает выдачи"}</strong></div>
-                  <div className="client-address">
-                    <span>Адрес склада в Китае</span>
-                    <p>{client?.chinaAddress || "Адрес появится после подтверждения регистрации"}</p>
-                  </div>
-                  <button className="primary" type="button" disabled={!profile.approved} onClick={copyAddress}>Скопировать код и адрес</button>
-                </article>
-              </section>
-            ) : (
-              <section className="client-stack">
-                <article className="client-card">
-                  <div className="client-section-head">
-                    <h2>Движение товаров</h2>
-                    <span>{profile.boxes.length} отправлений</span>
-                  </div>
-                  <div className="client-box-list">
-                    {profile.boxes.map((box) => (
-                      <div className="client-box" key={box.id}>
-                        <div className="client-box-top">
-                          <div><strong>{box.track}</strong><span>{box.id} - {box.weight || "вес уточняется"}</span></div>
-                          <b>{stageLabels[box.stage]?.flag || "-"}</b>
-                        </div>
-                        <p>{box.status}</p>
-                        {box.amount ? <small>{box.clientRate ? `${box.clientRate} - ${box.amount}` : box.amount}</small> : null}
-                        <StageProgress active={box.stage} />
-                      </div>
-                    ))}
-                    {!profile.boxes.length ? <EmptyStatuses /> : null}
-                  </div>
-                </article>
-              </section>
-            )}
-          </>
-        ) : null}
+    <main className="client-app neu-app confirmed">
+      <Header activeTab={activeTab} name={client?.name || "Клиент"} latestStage={latestStage.title} />
+      <section className="neu-scroll">
+        {notice ? <p className="neu-toast inline">{notice}</p> : null}
+        {error ? <p className="neu-error">{error}</p> : null}
+        {isLoading || !hasCheckedProfile ? <p className="neu-toast inline">Загружаем кабинет...</p> : null}
+        {activeTab === "code" ? <CodeScreen client={client} onCopy={copyAddress} /> : <StatusesScreen boxes={profile.boxes} />}
       </section>
+      <BottomNav activeTab={activeTab} onTab={setActiveTab} />
     </main>
+  );
+}
+
+function RegistrationScreen({
+  form,
+  isLoading,
+  notice,
+  error,
+  onSubmit,
+  onName,
+  onPhone,
+}: {
+  form: { fullName: string; whatsappPhone: string };
+  isLoading: boolean;
+  notice: string;
+  error: string;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onName: (value: string) => void;
+  onPhone: (value: string) => void;
+}) {
+  return (
+    <section className="neu-registration slide-up">
+      <div className="neu-logo-block">
+        <div className="neu-logo float">🚚</div>
+        <strong>CFlow Cargo</strong>
+        <span>Доставка из Китая в Казахстан</span>
+      </div>
+
+      <form className="neu-card neu-form" onSubmit={onSubmit}>
+        <div className="neu-section-title">
+          <h1>Регистрация</h1>
+          <p>Получите персональный код и адрес склада в Китае</p>
+        </div>
+        <label>
+          <span>ФИО</span>
+          <input value={form.fullName} onChange={(event) => onName(event.target.value)} placeholder="Иванов Иван Иванович" required />
+        </label>
+        <label>
+          <span>Номер WhatsApp</span>
+          <input value={form.whatsappPhone} onChange={(event) => onPhone(event.target.value)} placeholder="+7 777 000 00 00" required />
+        </label>
+        <button className="neu-accent" type="submit" disabled={isLoading}>{isLoading ? "Отправляем..." : "Отправить заявку →"}</button>
+      </form>
+
+      {notice ? <p className="neu-toast inline">{notice}</p> : null}
+      {error ? <p className="neu-error">{error}</p> : null}
+      <div className="neu-hint"><span>ℹ️</span><p>Менеджер проверит данные и выдаст персональный код в течение рабочего дня</p></div>
+    </section>
+  );
+}
+
+function PendingScreen({ name, phone, notice, error, isLoading }: { name: string; phone: string; notice: string; error: string; isLoading: boolean }) {
+  return (
+    <section className="neu-pending slide-up">
+      <div className="neu-mini-head">
+        <div className="neu-mini-icon">🚚</div>
+        <div><span>CFlow Cargo</span><strong>Привет, {name.split(" ")[0] || "клиент"}!</strong></div>
+      </div>
+      <article className="neu-card pending-card">
+        <div className="neu-logo wait float">⏳</div>
+        <h1>Заявка на проверке</h1>
+        <p>Менеджер проверяет ваши данные. Обычно занимает несколько часов в рабочее время.</p>
+        <div className="neu-pill warn"><i />Ожидает подтверждения</div>
+      </article>
+      <article className="neu-card neu-next">
+        <span>Что будет дальше</span>
+        {["Менеджер подтвердит вашу заявку", "Вы получите персональный код клиента", "Используйте код при заказе в Китае"].map((item, index) => (
+          <div key={item}><b>{index + 1}</b><p>{item}</p></div>
+        ))}
+      </article>
+      {phone ? <div className="neu-hint"><span>📱</span><p>WhatsApp для связи: {phone}</p></div> : null}
+      {notice ? <p className="neu-toast inline">{notice}</p> : null}
+      {error ? <p className="neu-error">{error}</p> : null}
+      {isLoading ? <p className="neu-toast inline">Загружаем кабинет...</p> : null}
+    </section>
+  );
+}
+
+function Header({ activeTab, name, latestStage }: { activeTab: AppTab; name: string; latestStage: string }) {
+  return (
+    <header className="neu-header">
+      <div className="neu-mini-head">
+        <div className="neu-mini-icon">🚚</div>
+        <div><span>CFlow Cargo</span><strong>{name.split(" ")[0] || "Клиент"}</strong></div>
+      </div>
+      <div className="neu-header-pill">{activeTab === "code" ? "📋 Мой код" : `📦 ${latestStage}`}</div>
+    </header>
+  );
+}
+
+function CodeScreen({ client, onCopy }: { client: ClientProfile["client"]; onCopy: () => void }) {
+  return (
+    <section className="neu-stack slide-up">
+      <article className="neu-card client-badge">
+        <div className="neu-mini-icon large">👤</div>
+        <div><strong>{client?.name || "Клиент"}</strong><span className="neu-pill success"><i />Подтвержден</span></div>
+      </article>
+      <article className="neu-card">
+        <div className="neu-label">Ваш код клиента</div>
+        <div className="neu-code">{client?.code || "Код еще не выдан"}</div>
+        <small>🔒 Персональный — только для вас</small>
+      </article>
+      <article className="neu-card">
+        <div className="neu-label">Адрес склада в Китае</div>
+        <div className="neu-address">{client?.chinaAddress || "Адрес появится после подтверждения регистрации"}</div>
+      </article>
+      <button className="neu-accent copy" type="button" disabled={!client?.code || !client?.chinaAddress} onClick={onCopy}>📋 Скопировать код и адрес</button>
+      <div className="neu-hint"><span>💡</span><p>При заказе в Китае вставьте код в поле получателя. По нему склад поймет, что посылка ваша.</p></div>
+    </section>
+  );
+}
+
+function StatusesScreen({ boxes }: { boxes: ClientBox[] }) {
+  const [filter, setFilter] = useState<"all" | "active" | "delivered">("all");
+  const filteredBoxes = useMemo(() => {
+    if (filter === "all") return boxes;
+    return boxes.filter((box) => {
+      const isDelivered = box.status.trim().toLowerCase() === "выдано" || box.status.trim().toLowerCase() === "delivered";
+      return filter === "delivered" ? isDelivered : !isDelivered;
+    });
+  }, [boxes, filter]);
+
+  return (
+    <section className="neu-stack">
+      <div className="neu-filter" role="tablist" aria-label="Фильтр посылок">
+        <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Все</button>
+        <button type="button" className={filter === "active" ? "active" : ""} onClick={() => setFilter("active")}>В процессе</button>
+        <button type="button" className={filter === "delivered" ? "active" : ""} onClick={() => setFilter("delivered")}>Выданные</button>
+      </div>
+      {filteredBoxes.length ? <div className="neu-count">{filteredBoxes.length} посылок</div> : null}
+      {filteredBoxes.map((box, index) => <ShipmentCard box={box} index={index} key={box.id} />)}
+      {!filteredBoxes.length ? <EmptyStatuses /> : null}
+    </section>
+  );
+}
+
+function ShipmentCard({ box, index }: { box: ClientBox; index: number }) {
+  const meta = stageLabels[box.stage] || stageLabels.china_warehouse;
+  const progress = Math.min(Math.max(meta.step / 4, 0), 1) * 100;
+  return (
+    <article className="neu-card shipment-card slide-up" style={{ animationDelay: `${index * 0.06}s` }}>
+      <div className="shipment-top">
+        <div>
+          <strong>{box.track || box.id}</strong>
+          <span>{box.id} - {box.weight || "вес уточняется"}</span>
+        </div>
+        <div className="shipment-status"><i />{meta.title}</div>
+      </div>
+      <div className="shipment-meta">
+        {box.weight ? <span>⚖️ {box.weight}</span> : null}
+        {box.amount ? <span>💰 {box.clientRate ? `${box.clientRate} - ${box.amount}` : box.amount}</span> : null}
+      </div>
+      <div className="neu-progress"><i style={{ width: `${progress}%` }} /></div>
+      <StageProgress active={box.stage} />
+    </article>
   );
 }
 
 function EmptyStatuses() {
   return (
-    <div className="empty-state">
-      <strong>Пока нет товаров</strong>
-      <span>Когда склад зарегистрирует ваши покупки, здесь появятся этапы: Китай, в пути, Казахстан и Астана.</span>
+    <div className="neu-card empty-shipments">
+      <div className="neu-logo small float">📭</div>
+      <strong>Посылок пока нет</strong>
+      <span>Сделайте заказ и укажите адрес склада. Ваши посылки появятся здесь после регистрации на складе.</span>
     </div>
   );
 }
@@ -295,13 +391,22 @@ function StageProgress({ active }: { active: CargoStage }) {
   const stages = Object.keys(stageLabels) as CargoStage[];
   const activeIndex = stages.indexOf(active);
   return (
-    <ol className="client-progress">
+    <ol className="neu-route">
       {stages.map((stage, index) => (
         <li className={index <= activeIndex ? "done" : ""} key={stage}>
-          <i>{stageLabels[stage].flag}</i>
+          <b>{stageLabels[stage].icon}</b>
           <div><strong>{stageLabels[stage].title}</strong><span>{stageLabels[stage].text}</span></div>
         </li>
       ))}
     </ol>
+  );
+}
+
+function BottomNav({ activeTab, onTab }: { activeTab: AppTab; onTab: (tab: AppTab) => void }) {
+  return (
+    <nav className="neu-bottom-nav" aria-label="Разделы кабинета">
+      <button type="button" className={activeTab === "code" ? "active" : ""} onClick={() => onTab("code")}>📋<span>Мой код</span></button>
+      <button type="button" className={activeTab === "statuses" ? "active" : ""} onClick={() => onTab("statuses")}>📦<span>Посылки</span></button>
+    </nav>
   );
 }

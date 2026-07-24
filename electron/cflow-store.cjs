@@ -207,6 +207,48 @@ function mergeById(items, incoming) {
   return changed;
 }
 
+function normalizeClientCode(value) {
+  return String(value || "").trim();
+}
+
+function normalizeClientCodeItem(input, count = 0) {
+  const now = nowIso();
+  const code = normalizeClientCode(input?.code || input?.clientCode || input);
+  const clientId = String(input?.clientId || "").trim();
+  const status = String(input?.status || (clientId ? "assigned" : "available")).trim();
+  return {
+    id: String(input?.id || `CC-${String(count + 1).padStart(6, "0")}`).trim(),
+    code,
+    status: status === "assigned" ? "assigned" : "available",
+    clientId,
+    clientName: String(input?.clientName || "").trim(),
+    assignedAt: String(input?.assignedAt || ""),
+    createdAt: String(input?.createdAt || now),
+    updatedAt: String(input?.updatedAt || now),
+  };
+}
+
+function mergeClientCodes(data, incoming) {
+  let changed = false;
+  const existingByCode = new Map((data.clientCodes || []).map((item) => [String(item.code || "").toLowerCase(), item]));
+  (Array.isArray(incoming) ? incoming : []).forEach((item, index) => {
+    const next = normalizeClientCodeItem(item, data.clientCodes.length + index);
+    if (!next.code) return;
+    const existing = existingByCode.get(next.code.toLowerCase());
+    if (!existing) {
+      data.clientCodes.unshift(next);
+      existingByCode.set(next.code.toLowerCase(), next);
+      changed = true;
+      return;
+    }
+    if (newerOrEqual(next.updatedAt, existing.updatedAt)) {
+      Object.assign(existing, { ...existing, ...next, id: existing.id || next.id });
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 async function pullCloudSnapshot(data) {
   const result = await cloudRequest("/api/admin/snapshot");
   if (!result?.ok) {
@@ -221,6 +263,14 @@ async function pullCloudSnapshot(data) {
   changed = mergeById(data.boxes, snapshot.boxes) || changed;
   changed = mergeById(data.shipments, snapshot.shipments) || changed;
   changed = mergeById(data.activity, snapshot.activity) || changed;
+  changed = mergeClientCodes(data, snapshot.clientCodes) || changed;
+  if (snapshot.settings && typeof snapshot.settings === "object") {
+    const nextSettings = { ...data.settings, ...snapshot.settings };
+    if (JSON.stringify(nextSettings) !== JSON.stringify(data.settings)) {
+      data.settings = nextSettings;
+      changed = true;
+    }
+  }
   if (snapshot.finances && typeof snapshot.finances === "object") {
     data.finances = { ...data.finances, ...snapshot.finances };
   }
@@ -290,6 +340,10 @@ function emptyStore() {
       profitToday: 0,
     },
     activity: [],
+    clientCodes: [],
+    settings: {
+      chinaAddress: "",
+    },
   };
 }
 
@@ -455,6 +509,8 @@ function readStore(app) {
     warehouse: Array.isArray(data.warehouse) ? data.warehouse : [],
     shipments: Array.isArray(data.shipments) ? data.shipments : [],
     activity: Array.isArray(data.activity) ? data.activity : [],
+    clientCodes: Array.isArray(data.clientCodes) ? data.clientCodes.map((item, index) => normalizeClientCodeItem(item, index)).filter((item) => item.code) : [],
+    settings: { ...defaults.settings, ...(data.settings || {}) },
     finances: { ...defaults.finances, ...(data.finances || {}) },
   };
 }
@@ -682,6 +738,72 @@ async function createClient(app, input) {
   }
 }
 
+async function addClientCodes(app, input) {
+  const data = readStore(app);
+  const chunks = String(input.codes || input.clientCodes || "")
+    .split(/[\r\n,; \t]+/)
+    .map(normalizeClientCode)
+    .filter(Boolean);
+  if (!chunks.length) return { ok: false, error: "Добавьте хотя бы один код клиента" };
+
+  const existingCodes = new Set((data.clientCodes || []).map((item) => String(item.code || "").toLowerCase()));
+  const added = [];
+  chunks.forEach((code) => {
+    const key = code.toLowerCase();
+    if (existingCodes.has(key)) return;
+    existingCodes.add(key);
+    const item = normalizeClientCodeItem({ code }, data.clientCodes.length + added.length);
+    data.clientCodes.unshift(item);
+    added.push(item);
+  });
+
+  if (!added.length) return { ok: false, error: "Все эти коды уже есть в базе" };
+  logActivity(data, "Коды клиентов", `Добавлено кодов: ${added.length}`, input.user || "Оператор");
+  writeStore(app, data);
+  return publicSnapshot(app);
+}
+
+async function saveWarehouseAddress(app, input) {
+  const data = readStore(app);
+  const chinaAddress = String(input.chinaAddress || "").trim();
+  if (!chinaAddress) return { ok: false, error: "Укажите адрес склада в Китае" };
+  data.settings = { ...(data.settings || {}), chinaAddress, updatedAt: nowIso() };
+  logActivity(data, "Адрес склада", "Адрес склада в Китае обновлен", input.user || "Оператор");
+  writeStore(app, data);
+  return publicSnapshot(app);
+}
+
+async function issueClientCode(app, input) {
+  const data = readStore(app);
+  const clientId = String(input.clientId || "").trim();
+  if (!clientId) return { ok: false, error: "Выберите клиента" };
+  const client = data.clients.find((item) => item.id === clientId);
+  if (!client) return { ok: false, error: "Клиент не найден" };
+
+  const chinaAddress = String(data.settings?.chinaAddress || "").trim();
+  if (!chinaAddress) return { ok: false, error: "Сначала сохраните адрес склада в Китае на дашборде" };
+
+  const now = nowIso();
+  if (!client.clientCode) {
+    const codeItem = (data.clientCodes || []).find((item) => item.status !== "assigned" && !item.clientId && item.code);
+    if (!codeItem) return { ok: false, error: "Свободные коды закончились. Внесите новые коды на дашборде" };
+    codeItem.status = "assigned";
+    codeItem.clientId = client.id;
+    codeItem.clientName = client.name;
+    codeItem.assignedAt = now;
+    codeItem.updatedAt = now;
+    client.clientCode = codeItem.code;
+  }
+
+  client.chinaAddress = client.chinaAddress || chinaAddress;
+  client.registrationStatus = "approved";
+  client.updatedAt = now;
+  logActivity(data, "Код клиента", `${client.clientCode} закреплен за ${client.name}`, input.user || "Оператор");
+  writeStore(app, data);
+  await pushCloudClient(client, client.registrationSource || "manual");
+  return publicSnapshot(app);
+}
+
 function createShipment(app, input) {
   const data = readStore(app);
   const title = String(input.title || "").trim();
@@ -770,6 +892,9 @@ function registerCflowIpc(ipcMain, app) {
   ipcMain.handle("cflow-data:update-status", (_event, payload) => updateStatus(app, payload || {}));
   ipcMain.handle("cflow-data:problem-box", (_event, payload) => setProblem(app, payload || {}));
   ipcMain.handle("cflow-data:create-client", (_event, payload) => createClient(app, payload || {}));
+  ipcMain.handle("cflow-data:add-client-codes", (_event, payload) => addClientCodes(app, payload || {}));
+  ipcMain.handle("cflow-data:save-warehouse-address", (_event, payload) => saveWarehouseAddress(app, payload || {}));
+  ipcMain.handle("cflow-data:issue-client-code", (_event, payload) => issueClientCode(app, payload || {}));
   ipcMain.handle("cflow-data:create-shipment", (_event, payload) => createShipment(app, payload || {}));
   ipcMain.handle("cflow-data:record-payment", (_event, payload) => recordPayment(app, payload || {}));
   ipcMain.handle("cflow-data:delete-box", (_event, payload) => deleteBox(app, payload || {}));

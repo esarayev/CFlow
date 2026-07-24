@@ -92,6 +92,21 @@ type FinanceData = {
   profitToday?: number;
 };
 
+type ClientCodeItem = {
+  id: string;
+  code: string;
+  status: string;
+  clientId?: string;
+  clientName?: string;
+  assignedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type SettingsData = {
+  chinaAddress?: string;
+};
+
 type CflowData = {
   boxes: BoxItem[];
   clients: ClientItem[];
@@ -99,6 +114,8 @@ type CflowData = {
   shipments: ShipmentItem[];
   finances: FinanceData;
   activity: ActivityItem[];
+  clientCodes: ClientCodeItem[];
+  settings: SettingsData;
 };
 
 type ApiResult = {
@@ -109,6 +126,7 @@ type ApiResult = {
 };
 
 type ActionMode = "receive" | "issue" | "move" | "client" | "shipment" | "payment" | "problem" | "status";
+type DashboardPanel = "codes" | "address" | null;
 type DetailModalState = { type: "box"; id: string } | { type: "client"; id: string } | null;
 
 type ActionFormState = {
@@ -155,6 +173,9 @@ declare global {
       updateStatus: (payload: Record<string, string>) => Promise<ApiResult>;
       problemBox: (payload: Record<string, string>) => Promise<ApiResult>;
       createClient: (payload: Record<string, string>) => Promise<ApiResult>;
+      addClientCodes: (payload: Record<string, string>) => Promise<ApiResult>;
+      saveWarehouseAddress: (payload: Record<string, string>) => Promise<ApiResult>;
+      issueClientCode: (payload: Record<string, string>) => Promise<ApiResult>;
       createShipment: (payload: Record<string, string>) => Promise<ApiResult>;
       recordPayment: (payload: Record<string, string>) => Promise<ApiResult>;
       deleteBox: (payload: Record<string, string>) => Promise<ApiResult>;
@@ -169,6 +190,8 @@ const fallbackData: CflowData = {
   shipments: [],
   finances: { incomeToday: 0, expectedToday: 0, expensesToday: 0, debt: 0 },
   activity: [],
+  clientCodes: [],
+  settings: { chinaAddress: "" },
 };
 
 const navItems = ["Dashboard", "Коробки", "Клиенты", "Склад", "Отправки", "Финансы", "Отчеты", "Настройки"];
@@ -244,6 +267,9 @@ export default function Home() {
   const [syncStatus, setSyncStatus] = useState<{ status: string; pulledClients?: number } | null>(null);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [detailModal, setDetailModal] = useState<DetailModalState>(null);
+  const [dashboardPanel, setDashboardPanel] = useState<DashboardPanel>(null);
+  const [codesInput, setCodesInput] = useState("");
+  const [addressInput, setAddressInput] = useState("");
   const [loginName, setLoginName] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -280,6 +306,10 @@ export default function Home() {
     if (!sessionUser || !window.cflowData) return;
     window.cflowData.snapshot().then(applyResult).catch(() => setError("Не удалось загрузить базу CFlow"));
   }, [sessionUser]);
+
+  useEffect(() => {
+    setAddressInput(data.settings?.chinaAddress || "");
+  }, [data.settings?.chinaAddress]);
 
   useEffect(() => {
     if (!selectedId && data.boxes[0]) setSelectedId(data.boxes[0].id);
@@ -324,6 +354,9 @@ export default function Home() {
       item.boxId === modalBox.id || item.text.includes(modalBox.id) || item.text.includes(modalBox.track) || Boolean(modalBox.code && item.text.includes(modalBox.code)),
     );
   }, [data.activity, modalBox]);
+  const availableCodeCount = useMemo(() => data.clientCodes.filter((item) => item.status !== "assigned" && !item.clientId).length, [data.clientCodes]);
+  const assignedCodeCount = data.clientCodes.length - availableCodeCount;
+  const warehouseAddress = data.settings?.chinaAddress || "";
 
   const matchedClient = useMemo(() => {
     const code = form.clientCode.trim().toLowerCase();
@@ -368,7 +401,17 @@ export default function Home() {
         setError(`Облако не подключилось: ${result.sync.status}`);
       }
     }
-    setData(result.data);
+    setData({
+      ...fallbackData,
+      ...result.data,
+      boxes: Array.isArray(result.data.boxes) ? result.data.boxes : [],
+      clients: Array.isArray(result.data.clients) ? result.data.clients : [],
+      warehouse: Array.isArray(result.data.warehouse) ? result.data.warehouse : [],
+      shipments: Array.isArray(result.data.shipments) ? result.data.shipments : [],
+      activity: Array.isArray(result.data.activity) ? result.data.activity : [],
+      clientCodes: Array.isArray(result.data.clientCodes) ? result.data.clientCodes : [],
+      settings: { ...fallbackData.settings, ...(result.data.settings || {}) },
+    });
     if (!result.sync || result.sync.status === "connected") setError("");
   }
 
@@ -424,6 +467,41 @@ export default function Home() {
     if (result.ok && result.sync?.status === "connected") {
       setNotice(`Синхронизация выполнена. Клиентов в облаке: ${result.sync.pulledClients || 0}`);
     }
+  }
+
+  async function addClientCodes(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+    const result = await window.cflowData.addClientCodes({ codes: codesInput, user: currentUserName() });
+    applyResult(result);
+    if (result.ok) {
+      setCodesInput("");
+      setNotice("Коды клиентов добавлены в общий пул");
+    }
+  }
+
+  async function saveWarehouseAddress(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+    const result = await window.cflowData.saveWarehouseAddress({ chinaAddress: addressInput, user: currentUserName() });
+    applyResult(result);
+    if (result.ok) setNotice("Адрес склада сохранен");
+  }
+
+  async function issueClientCode(client: ClientItem) {
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+    const result = await window.cflowData.issueClientCode({ clientId: client.id, user: currentUserName() });
+    applyResult(result);
+    if (result.ok) setNotice(`Код закреплен за клиентом ${client.name}`);
   }
 
   async function issueClientAccess(client: ClientItem, clientCode: string, chinaAddress: string) {
@@ -503,8 +581,6 @@ export default function Home() {
         phone: form.phone,
         telegram: form.telegram,
         comments: form.comment,
-        clientCode: form.clientCode,
-        chinaAddress: form.chinaAddress,
         user,
       }), "Клиент сохранен");
       return;
@@ -578,6 +654,45 @@ export default function Home() {
       setError("Не удалось скопировать текст");
     }
   }
+
+  const dashboardAdminPanel = activeNav === "Dashboard" && dashboardPanel ? (
+    <article className="panel dashboard-admin-panel">
+      <div className="panel-head compact">
+        <div>
+          <span className="eyebrow">Коды клиентов</span>
+          <h2>{dashboardPanel === "codes" ? "Внести коды клиента" : "Адрес склада в Китае"}</h2>
+        </div>
+        <button type="button" onClick={() => setDashboardPanel(null)}>Закрыть</button>
+      </div>
+      {dashboardPanel === "codes" ? (
+        <form className="dashboard-admin-form" onSubmit={addClientCodes}>
+          <label>
+            Список кодов
+            <textarea
+              value={codesInput}
+              onChange={(event) => setCodesInput(event.target.value)}
+              placeholder={"CF-1001\nCF-1002\nCF-1003"}
+            />
+          </label>
+          <p>Можно вставить списком, через пробел, запятую или с новой строки. Дубли будут пропущены.</p>
+          <button className="primary" type="submit">Добавить в пул</button>
+        </form>
+      ) : (
+        <form className="dashboard-admin-form" onSubmit={saveWarehouseAddress}>
+          <label>
+            Адрес склада
+            <textarea
+              value={addressInput}
+              onChange={(event) => setAddressInput(event.target.value)}
+              placeholder="Адрес склада в Китае, который будет выдаваться клиентам"
+            />
+          </label>
+          <p>Этот адрес автоматически попадет клиенту вместе с закрепленным кодом.</p>
+          <button className="primary" type="submit">Сохранить адрес</button>
+        </form>
+      )}
+    </article>
+  ) : null;
 
   const operationPanel = (
     <article className="panel intake-panel">
@@ -755,9 +870,19 @@ export default function Home() {
               <strong>Сканировать трек или QR</strong>
               <p>Оператор начинает приемку без переходов по меню.</p>
               <button className="primary" type="button" onClick={openScanner}>Открыть сканер</button>
+              <div className="code-pool-mini">
+                <span>Коды: {availableCodeCount} свободно · {assignedCodeCount} выдано</span>
+                <span>{warehouseAddress ? "Адрес склада задан" : "Адрес склада не задан"}</span>
+              </div>
+              <div className="scan-card-actions">
+                <button type="button" onClick={() => setDashboardPanel("codes")}>Внести коды клиента</button>
+                <button type="button" onClick={() => setDashboardPanel("address")}>Адрес склада</button>
+              </div>
             </div>
           ) : null}
         </section>
+
+        {dashboardAdminPanel}
 
         {activeNav === "Dashboard" ? (
           <section className="dashboard-page">
@@ -829,7 +954,9 @@ export default function Home() {
             onOpenBox={openBoxDetail}
             onDeleteBox={deleteBox}
             onCopyText={copyText}
-            onIssueClientAccess={issueClientAccess}
+            onIssueClientAccess={issueClientCode}
+            availableCodeCount={availableCodeCount}
+            warehouseAddress={warehouseAddress}
           />
         ) : null}
       </section>
@@ -919,8 +1046,6 @@ function ActionForm({
         <label>Имя<input value={form.client} onChange={(event) => update("client", event.target.value)} placeholder="Имя клиента" /></label>
         <label>Телефон<input value={form.phone} onChange={(event) => update("phone", event.target.value)} placeholder="+7..." /></label>
         <label>Telegram<input value={form.telegram} onChange={(event) => update("telegram", event.target.value)} placeholder="@username" /></label>
-        <label>Код клиента<input value={form.clientCode} onChange={(event) => update("clientCode", event.target.value)} placeholder="Будет выдан складом в Китае" /></label>
-        <label>Адрес склада в Китае<input value={form.chinaAddress} onChange={(event) => update("chinaAddress", event.target.value)} placeholder="Адрес для покупок клиента" /></label>
         <label>Комментарий<input value={form.comment} onChange={(event) => update("comment", event.target.value)} placeholder="Заметка" /></label>
         <button className="primary" type="submit">Сохранить клиента</button>
       </form>
@@ -1117,6 +1242,8 @@ function DetailModal({
   onDeleteBox,
   onCopyText,
   onIssueClientAccess,
+  availableCodeCount,
+  warehouseAddress,
 }: {
   box?: BoxItem;
   client?: ClientItem;
@@ -1127,14 +1254,11 @@ function DetailModal({
   onOpenBox: (id: string) => void;
   onDeleteBox: (id: string) => void;
   onCopyText: (text: string, success: string) => void;
-  onIssueClientAccess: (client: ClientItem, clientCode: string, chinaAddress: string) => void;
+  onIssueClientAccess: (client: ClientItem) => void;
+  availableCodeCount: number;
+  warehouseAddress: string;
 }) {
   const isClientModal = Boolean(client);
-  const [clientAccessForm, setClientAccessForm] = useState({ clientCode: client?.clientCode || "", chinaAddress: client?.chinaAddress || "" });
-
-  useEffect(() => {
-    setClientAccessForm({ clientCode: client?.clientCode || "", chinaAddress: client?.chinaAddress || "" });
-  }, [client?.id, client?.clientCode, client?.chinaAddress]);
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -1221,31 +1345,24 @@ function DetailModal({
               <div><dt>Комментарий</dt><dd>{client.comments || "Нет"}</dd></div>
               <div><dt>Коробок</dt><dd>{clientBoxes.length}</dd></div>
             </dl>
-            <form
-              className="modal-access-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                onIssueClientAccess(client, clientAccessForm.clientCode, clientAccessForm.chinaAddress);
-              }}
-            >
-              <label>
-                Код клиента
-                <input
-                  value={clientAccessForm.clientCode}
-                  onChange={(event) => setClientAccessForm((current) => ({ ...current, clientCode: event.target.value }))}
-                  placeholder="Например CF-1024"
-                />
-              </label>
-              <label>
-                Адрес склада в Китае
-                <input
-                  value={clientAccessForm.chinaAddress}
-                  onChange={(event) => setClientAccessForm((current) => ({ ...current, chinaAddress: event.target.value }))}
-                  placeholder="Адрес для покупок клиента"
-                />
-              </label>
-              <button className="primary" type="submit">Выдать код и адрес</button>
-            </form>
+            <div className="modal-access-form">
+              <div>
+                <strong>{client.clientCode ? "Код уже выдан" : "Автовыдача кода"}</strong>
+                <p>{client.clientCode ? `Код ${client.clientCode} закреплен за этим клиентом навсегда.` : "Система возьмет первый свободный код из пула и добавит общий адрес склада."}</p>
+              </div>
+              <div>
+                <span>Свободно кодов: {availableCodeCount}</span>
+                <span>{warehouseAddress ? "Адрес склада готов" : "Сначала задайте адрес склада"}</span>
+              </div>
+              <button
+                className="primary"
+                type="button"
+                disabled={Boolean(client.clientCode) || availableCodeCount <= 0 || !warehouseAddress}
+                onClick={() => onIssueClientAccess(client)}
+              >
+                {client.clientCode ? "Код уже выдан" : "Выдать код"}
+              </button>
+            </div>
             <div className="detail-actions">
               <button className="primary" type="button" onClick={() => onCopyText(clientInstruction(client), "Инструкция клиенту скопирована")}>Скопировать инструкцию клиенту</button>
             </div>

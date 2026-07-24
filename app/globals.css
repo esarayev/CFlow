@@ -350,6 +350,56 @@ h2 {
   line-height: 1.15;
 }
 
+.code-pool-mini {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid rgba(60, 83, 139, 0.18);
+  border-radius: 8px;
+  background: rgba(60, 83, 139, 0.08);
+}
+
+.scan-card-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.dashboard-admin-panel {
+  margin-bottom: 18px;
+}
+
+.dashboard-admin-form {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboard-admin-form label {
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.dashboard-admin-form textarea {
+  width: 100%;
+  min-height: 118px;
+  resize: vertical;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--foreground);
+  padding: 12px;
+  font: inherit;
+}
+
+.dashboard-admin-form p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .metrics-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -615,29 +665,29 @@ h2 {
 
 .modal-access-form {
   display: grid;
-  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 12px;
-  align-items: end;
+  align-items: center;
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--accent-soft);
 }
 
-.modal-access-form label {
+.modal-access-form div {
   display: grid;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 750;
+  gap: 5px;
 }
 
-.modal-access-form input {
-  min-height: 42px;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: #fff;
-  padding: 0 12px;
+.modal-access-form p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modal-access-form span {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .modal-access-form button {

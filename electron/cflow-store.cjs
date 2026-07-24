@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 
 function dataDir(app) {
   return path.join(app.getPath("appData"), "CFlow");
@@ -33,10 +34,26 @@ function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function readWindowsUserEnv(name) {
+  if (process.platform !== "win32") return "";
+  try {
+    const output = execFileSync("reg", ["query", "HKCU\\Environment", "/v", name], {
+      encoding: "utf8",
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const line = output.split(/\r?\n/).find((item) => item.includes(name));
+    return String(line || "").trim().split(/\s{2,}/).pop() || "";
+  } catch {
+    return "";
+  }
+}
+
 function cloudConfig() {
+  const adminToken = String(process.env.CFLOW_ADMIN_TOKEN || readWindowsUserEnv("CFLOW_ADMIN_TOKEN") || "");
   return {
     apiUrl: String(process.env.CFLOW_CLOUD_API_URL || process.env.CFLOW_API_URL || "https://es-logistics-client.f7zp26dshq.chatgpt.site").replace(/\/+$/, ""),
-    adminToken: String(process.env.CFLOW_ADMIN_TOKEN || ""),
+    adminToken,
   };
 }
 

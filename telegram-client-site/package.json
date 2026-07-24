@@ -1,0 +1,29 @@
+{
+  "name": "cflow-miniapp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vinext build && node scripts/copy-hosting-config.mjs",
+    "build:cf": "vinext build",
+    "deploy:cf": "wrangler deploy --config dist/server/wrangler.json",
+    "cf:whoami": "wrangler whoami",
+    "cf:d1:list": "wrangler d1 list",
+    "dev": "vinext dev",
+    "start": "vinext start"
+  },
+  "dependencies": {
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "vinext": "0.0.50"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.37.1",
+    "@vitejs/plugin-react": "6.0.2",
+    "@vitejs/plugin-rsc": "0.5.26",
+    "typescript": "5.9.3",
+    "vite": "8.0.13",
+    "wrangler": "4.92.0"
+  }
+}

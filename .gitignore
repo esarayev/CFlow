@@ -44,4 +44,9 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
-/telegram-client-site/
+/telegram-client-site/node_modules/
+/telegram-client-site/dist/
+/telegram-client-site/.vinext/
+/telegram-client-site/.wrangler/
+/telegram-client-site/.cloudflare/deploy.json
+/telegram-client-site/.openai/hosting.json

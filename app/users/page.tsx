@@ -14,11 +14,13 @@ type User = {
   statusLabel?: string;
 };
 
+type AuthResult = { ok: boolean; error?: string; user?: User; sessionToken?: string };
+
 declare global {
   interface Window {
     cflowUsers?: {
       list: () => Promise<User[]>;
-      authenticate: (username: string, password: string) => Promise<{ ok: boolean; error?: string; user?: User }>;
+      authenticate: (username: string, password: string) => Promise<AuthResult>;
       create: (user: { name: string; username: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
       update: (user: { id: string; name: string; username: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
       delete: (userId: string) => Promise<{ ok: boolean; error?: string; users?: User[] }>;

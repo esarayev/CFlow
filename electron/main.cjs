@@ -9,7 +9,6 @@ const packagedAppPath = path.join(app.getAppPath(), "out", "index.html");
 const appUrl = process.env.CFLOW_APP_URL || (isDev ? "http://localhost:3000" : pathToFileURL(packagedAppPath).toString());
 const allowedOrigins = new Set([
   "http://localhost:3000",
-  "https://cflow-cargo.f7zp26dshq.chatgpt.site",
   "https://cflow-miniapp.yegor-sarayev.workers.dev",
 ]);
 

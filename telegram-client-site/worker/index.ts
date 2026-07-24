@@ -63,12 +63,19 @@ type CflowClientCode = {
   updated_at: string;
 };
 
+type CflowTombstone = {
+  id: string;
+  reason: string;
+  deleted_at: string;
+};
+
 const memoryClients = new Map<string, CflowClient>();
 const memoryBoxes = new Map<string, CflowBox>();
 const memoryShipments = new Map<string, CflowStoredEntity>();
 const memoryActivity = new Map<string, CflowStoredEntity>();
 const memoryClientCodes = new Map<string, CflowClientCode>();
 const memorySettings = new Map<string, string>();
+const memoryDeletedBoxes = new Map<string, CflowTombstone>();
 
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
@@ -95,11 +102,11 @@ function nowIso() {
 }
 
 function makeClientId() {
-  return `CL-${String(memoryClients.size + 1).padStart(6, "0")}`;
+  return `CL-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(16).slice(2, 6).toUpperCase()}`;
 }
 
 function makeBoxId() {
-  return `CF-${String(memoryBoxes.size + 1).padStart(6, "0")}`;
+  return `CF-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(16).slice(2, 6).toUpperCase()}`;
 }
 
 function toNumber(value: unknown) {
@@ -298,6 +305,13 @@ async function ensureTables(db?: D1Database) {
       updated_at TEXT NOT NULL
     )
   `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS deleted_boxes (
+      id TEXT PRIMARY KEY,
+      reason TEXT DEFAULT '',
+      deleted_at TEXT NOT NULL
+    )
+  `).run();
 }
 
 function publicClient(client: CflowClient | null, boxes: unknown[] = []) {
@@ -451,7 +465,35 @@ async function findBox(env: Env, id: string) {
   return await env.DB.prepare("SELECT * FROM boxes WHERE id = ?").bind(cleanId).first<CflowBox>();
 }
 
+async function findDeletedBox(env: Env, id: string) {
+  await ensureTables(env.DB);
+  const cleanId = normalizeId(id);
+  if (!cleanId) return null;
+  if (!env.DB) return memoryDeletedBoxes.get(cleanId) || null;
+  return await env.DB.prepare("SELECT * FROM deleted_boxes WHERE id = ?").bind(cleanId).first<CflowTombstone>();
+}
+
+async function upsertDeletedBox(env: Env, input: Record<string, unknown>) {
+  await ensureTables(env.DB);
+  const id = normalizeId(String(input.id || input.boxId || ""));
+  if (!id) return null;
+  const deletedAt = String(input.deletedAt || input.deleted_at || nowIso());
+  const tombstone = { id, reason: String(input.reason || "").trim(), deleted_at: deletedAt };
+  memoryDeletedBoxes.set(id, tombstone);
+  memoryBoxes.delete(id);
+  if (!env.DB) return tombstone;
+  await env.DB.prepare("DELETE FROM boxes WHERE id = ?").bind(id).run();
+  await env.DB.prepare(`
+    INSERT INTO deleted_boxes (id, reason, deleted_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET reason = excluded.reason, deleted_at = excluded.deleted_at
+  `).bind(tombstone.id, tombstone.reason, tombstone.deleted_at).run();
+  return tombstone;
+}
+
 async function upsertBox(env: Env, input: Record<string, unknown>) {
+  const deleted = await findDeletedBox(env, String(input.id || ""));
+  if (deleted) return null;
   const existing = await findBox(env, String(input.id || ""));
   const box = toStoredBox(input, existing);
   if (!box.track && !box.id) throw new Error("Укажите коробку");
@@ -477,16 +519,20 @@ async function upsertBox(env: Env, input: Record<string, unknown>) {
 async function deleteBox(env: Env, id: string) {
   const cleanId = normalizeId(id);
   if (!cleanId) return;
-  memoryBoxes.delete(cleanId);
-  if (!env.DB) return;
-  await ensureTables(env.DB);
-  await env.DB.prepare("DELETE FROM boxes WHERE id = ?").bind(cleanId).run();
+  await upsertDeletedBox(env, { id: cleanId, deletedAt: nowIso() });
 }
 
 async function listBoxes(env: Env) {
   await ensureTables(env.DB);
   if (!env.DB) return [...memoryBoxes.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   const result = await env.DB.prepare("SELECT * FROM boxes ORDER BY updated_at DESC").all<CflowBox>();
+  return result.results || [];
+}
+
+async function listDeletedBoxes(env: Env) {
+  await ensureTables(env.DB);
+  if (!env.DB) return [...memoryDeletedBoxes.values()].sort((a, b) => b.deleted_at.localeCompare(a.deleted_at));
+  const result = await env.DB.prepare("SELECT * FROM deleted_boxes ORDER BY deleted_at DESC").all<CflowTombstone>();
   return result.results || [];
 }
 
@@ -624,7 +670,26 @@ async function issueCodeToClient(env: Env, query: { id?: string; telegramId?: st
     await ensureTables(env.DB);
     let codeItem: CflowClientCode | null = null;
     if (env.DB) {
-      codeItem = await env.DB.prepare("SELECT * FROM client_codes WHERE status = 'available' AND client_id = '' ORDER BY created_at ASC LIMIT 1").first<CflowClientCode>();
+      const candidates = await env.DB.prepare("SELECT * FROM client_codes WHERE status = 'available' AND client_id = '' ORDER BY created_at ASC LIMIT 8").all<CflowClientCode>();
+      for (const candidate of candidates.results || []) {
+        const assignedAt = nowIso();
+        const result = await env.DB.prepare(`
+          UPDATE client_codes
+          SET status = 'assigned', client_id = ?, client_name = ?, assigned_at = ?, updated_at = ?
+          WHERE code = ? AND status = 'available' AND client_id = ''
+        `).bind(existing.id, existing.name, assignedAt, assignedAt, candidate.code).run();
+        if ((result.meta?.changes || 0) > 0) {
+          codeItem = {
+            ...candidate,
+            status: "assigned",
+            client_id: existing.id,
+            client_name: existing.name,
+            assigned_at: assignedAt,
+            updated_at: assignedAt,
+          };
+          break;
+        }
+      }
     } else {
       codeItem = [...memoryClientCodes.values()].find((item) => item.status === "available" && !item.client_id) || null;
     }
@@ -637,7 +702,7 @@ async function issueCodeToClient(env: Env, query: { id?: string; telegramId?: st
     codeItem.assigned_at = now;
     codeItem.updated_at = now;
     memoryClientCodes.set(codeItem.code.toLowerCase(), codeItem);
-    if (env.DB) {
+    if (env.DB && !codeItem.client_id) {
       await env.DB.prepare("UPDATE client_codes SET status = 'assigned', client_id = ?, client_name = ?, assigned_at = ?, updated_at = ? WHERE code = ?")
         .bind(existing.id, existing.name, now, now, codeItem.code)
         .run();
@@ -732,6 +797,11 @@ async function cloudSnapshot(env: Env) {
   const shipments = (await listEntities(env, "shipments")).map(toDesktopEntity);
   const activity = (await listEntities(env, "activity")).map(toDesktopEntity);
   const clientCodes = (await listClientCodes(env)).map(toDesktopClientCode);
+  const deletedBoxes = (await listDeletedBoxes(env)).map((item) => ({
+    id: item.id,
+    reason: item.reason,
+    deletedAt: item.deleted_at,
+  }));
   const settings = await getSettings(env);
   return {
     clients: clients.map(toDesktopClient),
@@ -741,6 +811,7 @@ async function cloudSnapshot(env: Env) {
     finances: deriveFinances(boxes),
     activity,
     clientCodes,
+    deletedBoxes,
     settings,
   };
 }
@@ -814,8 +885,10 @@ async function handleAdminSyncSnapshot(request: Request, env: Env) {
     const shipments = Array.isArray(data.shipments) ? data.shipments : [];
     const activity = Array.isArray(data.activity) ? data.activity : [];
     const clientCodes = Array.isArray(data.clientCodes) ? data.clientCodes : [];
+    const deletedBoxes = Array.isArray(data.deletedBoxes) ? data.deletedBoxes : [];
     const settings = data.settings && typeof data.settings === "object" ? data.settings as Record<string, unknown> : {};
 
+    await Promise.all(deletedBoxes.map((item) => upsertDeletedBox(env, item as Record<string, unknown>)));
     await Promise.all(clients.map((client) => upsertClient(env, client as Record<string, unknown>)));
     await Promise.all(boxes.map((box) => upsertBox(env, box as Record<string, unknown>)));
     await Promise.all(shipments.map((shipment) => upsertEntity(env, "shipments", shipment as Record<string, unknown>, "SHIP")));
@@ -834,6 +907,7 @@ async function handleAdminUpsertBox(request: Request, env: Env) {
   try {
     const body = await request.json() as Record<string, unknown>;
     const box = await upsertBox(env, body);
+    if (!box) return json({ ok: false, error: "Коробка удалена и не будет восстановлена старым snapshot" }, { status: 409 });
     return json({ ok: true, box: toDesktopBox(box), data: await cloudSnapshot(env) });
   } catch (error) {
     return json({ ok: false, error: error instanceof Error ? error.message : "Коробка не сохранена" }, { status: 400 });
@@ -842,8 +916,8 @@ async function handleAdminUpsertBox(request: Request, env: Env) {
 
 async function handleAdminDeleteBox(request: Request, env: Env) {
   if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
-  const body = await request.json() as { boxId?: string; id?: string };
-  await deleteBox(env, String(body.boxId || body.id || ""));
+  const body = await request.json() as { boxId?: string; id?: string; reason?: string };
+  await upsertDeletedBox(env, { id: String(body.boxId || body.id || ""), reason: body.reason || "", deletedAt: nowIso() });
   return json({ ok: true, data: await cloudSnapshot(env) });
 }
 

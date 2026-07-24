@@ -2,6 +2,8 @@ const fs = require("node:fs");
 const https = require("node:https");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
+const crypto = require("node:crypto");
+const { validateSession } = require("./users-store.cjs");
 
 function dataDir(app) {
   return path.join(app.getPath("appData"), "CFlow");
@@ -22,8 +24,10 @@ function displayTime(iso = nowIso()) {
   }).format(new Date(iso));
 }
 
-function makeId(prefix, count) {
-  return `${prefix}-${String(count + 1).padStart(6, "0")}`;
+function makeId(prefix, _count) {
+  const stamp = Date.now().toString(36).toUpperCase();
+  const suffix = crypto.randomBytes(2).toString("hex").toUpperCase();
+  return `${prefix}-${stamp}-${suffix}`;
 }
 
 function toNumber(value) {
@@ -249,6 +253,38 @@ function mergeClientCodes(data, incoming) {
   return changed;
 }
 
+function normalizeDeletedBox(input) {
+  return {
+    id: String(input?.id || input?.boxId || "").trim(),
+    reason: String(input?.reason || "").trim(),
+    deletedAt: String(input?.deletedAt || input?.deleted_at || nowIso()),
+  };
+}
+
+function mergeDeletedBoxes(data, incoming) {
+  let changed = false;
+  const existingById = new Map((data.deletedBoxes || []).map((item) => [String(item.id || ""), item]));
+  (Array.isArray(incoming) ? incoming : []).forEach((item) => {
+    const next = normalizeDeletedBox(item);
+    if (!next.id) return;
+    const existing = existingById.get(next.id);
+    if (!existing) {
+      data.deletedBoxes.unshift(next);
+      existingById.set(next.id, next);
+      changed = true;
+      return;
+    }
+    if (newerOrEqual(next.deletedAt, existing.deletedAt)) {
+      Object.assign(existing, next);
+      changed = true;
+    }
+  });
+  const deletedIds = new Set((data.deletedBoxes || []).map((item) => item.id));
+  const before = data.boxes.length;
+  data.boxes = data.boxes.filter((box) => !deletedIds.has(box.id));
+  return changed || before !== data.boxes.length;
+}
+
 async function pullCloudSnapshot(data) {
   const result = await cloudRequest("/api/admin/snapshot");
   if (!result?.ok) {
@@ -264,6 +300,7 @@ async function pullCloudSnapshot(data) {
   changed = mergeById(data.shipments, snapshot.shipments) || changed;
   changed = mergeById(data.activity, snapshot.activity) || changed;
   changed = mergeClientCodes(data, snapshot.clientCodes) || changed;
+  changed = mergeDeletedBoxes(data, snapshot.deletedBoxes) || changed;
   if (snapshot.settings && typeof snapshot.settings === "object") {
     const nextSettings = { ...data.settings, ...snapshot.settings };
     if (JSON.stringify(nextSettings) !== JSON.stringify(data.settings)) {
@@ -341,6 +378,7 @@ function emptyStore() {
     },
     activity: [],
     clientCodes: [],
+    deletedBoxes: [],
     settings: {
       chinaAddress: "",
     },
@@ -374,121 +412,6 @@ function deriveWarehouse(boxes) {
     }));
 }
 
-function seedData() {
-  const createdAt = nowIso();
-  const clients = [
-    { id: "CL-000001", name: "Айгерим Сагындык", phone: "+7 701 445 19 20", telegram: "@aigerim", comments: "Постоянный клиент" },
-    { id: "CL-000002", name: "Dias Market", phone: "+7 777 808 33 11", telegram: "@dias_market", comments: "Магазин" },
-    { id: "CL-000003", name: "Нурбол Канат", phone: "+7 705 221 77 41", telegram: "", comments: "Проверить документы" },
-    { id: "CL-000004", name: "Madina Store", phone: "+7 747 129 90 00", telegram: "@madina_store", comments: "" },
-  ];
-
-  const boxes = [
-    {
-      id: "CF-240718",
-      track: "YT938475120CN",
-      clientId: "CL-000001",
-      client: "Айгерим Сагындык",
-      phone: "+7 701 445 19 20",
-      status: "На складе",
-      place: "A-04 / S2 / P3",
-      weight: "8.4 кг",
-      dimensions: "42x35x28",
-      route: "Гуанчжоу -> Алматы",
-      payment: "Оплачено",
-      amount: 18600,
-      photo: "",
-      comment: "",
-      owner: "Марат",
-      createdAt,
-      updatedAt: createdAt,
-    },
-    {
-      id: "CF-240719",
-      track: "LP004492018FR",
-      clientId: "CL-000002",
-      client: "Dias Market",
-      phone: "+7 777 808 33 11",
-      status: "Ждет выдачи",
-      place: "B-01 / S1 / P1",
-      weight: "13.7 кг",
-      dimensions: "55x38x30",
-      route: "Париж -> Астана",
-      payment: "Долг 18 600 T",
-      amount: 18600,
-      photo: "",
-      comment: "Выдать после оплаты",
-      owner: "Алина",
-      createdAt,
-      updatedAt: createdAt,
-    },
-    {
-      id: "CF-240720",
-      track: "QR-88-1045",
-      clientId: "CL-000003",
-      client: "Нурбол Канат",
-      phone: "+7 705 221 77 41",
-      status: "Проблема",
-      place: "Зона проверки",
-      weight: "2.1 кг",
-      dimensions: "24x18x12",
-      route: "Иу -> Алматы",
-      payment: "Не оплачено",
-      amount: 7200,
-      photo: "",
-      comment: "Нет клиента в накладной",
-      owner: "Сергей",
-      createdAt,
-      updatedAt: createdAt,
-    },
-    {
-      id: "CF-240721",
-      track: "CNKZ55612008",
-      clientId: "CL-000004",
-      client: "Madina Store",
-      phone: "+7 747 129 90 00",
-      status: "В отправке",
-      place: "Контейнер KZ-18",
-      weight: "21.0 кг",
-      dimensions: "60x45x38",
-      route: "Шэньчжэнь -> Алматы",
-      payment: "Оплачено",
-      amount: 29400,
-      photo: "",
-      comment: "",
-      owner: "Марат",
-      createdAt,
-      updatedAt: createdAt,
-    },
-  ];
-
-  return {
-    boxes,
-    clients,
-    warehouse: [
-      { zone: "A", fill: 78, boxes: 412, note: "Приемка и быстрые выдачи" },
-      { zone: "B", fill: 52, boxes: 238, note: "Клиентская зона" },
-      { zone: "C", fill: 91, boxes: 501, note: "Крупный груз" },
-      { zone: "QC", fill: 34, boxes: 36, note: "Проверка и фото" },
-    ],
-    shipments: [
-      { id: "SHIP-000001", type: "Контейнер", title: "KZ-18", date: createdAt.slice(0, 10), route: "Шэньчжэнь -> Алматы", boxes: ["CF-240721"], cost: 240000 },
-    ],
-    finances: {
-      incomeToday: 2840500,
-      expectedToday: 418000,
-      expensesToday: 620000,
-      debt: 25800,
-    },
-    activity: [
-      { id: "ACT-000001", time: createdAt, title: "Размещение", text: "CF-240718 поставлена в A-04 / S2 / P3", user: "Марат" },
-      { id: "ACT-000002", time: createdAt, title: "Выдача", text: "CF-240719 переведена в ожидание клиента", user: "Алина" },
-      { id: "ACT-000003", time: createdAt, title: "Клиент", text: "Создан клиент Нурбол Канат", user: "Сергей" },
-      { id: "ACT-000004", time: createdAt, title: "Отправка", text: "Контейнер KZ-18 получил 16 коробок", user: "Марат" },
-    ],
-  };
-}
-
 function ensureStore(app) {
   fs.mkdirSync(dataDir(app), { recursive: true });
   if (!fs.existsSync(storePath(app))) {
@@ -510,6 +433,7 @@ function readStore(app) {
     shipments: Array.isArray(data.shipments) ? data.shipments : [],
     activity: Array.isArray(data.activity) ? data.activity : [],
     clientCodes: Array.isArray(data.clientCodes) ? data.clientCodes.map((item, index) => normalizeClientCodeItem(item, index)).filter((item) => item.code) : [],
+    deletedBoxes: Array.isArray(data.deletedBoxes) ? data.deletedBoxes.map(normalizeDeletedBox).filter((item) => item.id) : [],
     settings: { ...defaults.settings, ...(data.settings || {}) },
     finances: { ...defaults.finances, ...(data.finances || {}) },
   };
@@ -518,6 +442,13 @@ function readStore(app) {
 function writeStore(app, data) {
   ensureStore(app);
   fs.writeFileSync(storePath(app), JSON.stringify(data, null, 2), "utf8");
+}
+
+function withPermission(app, payload, permission, action) {
+  const auth = validateSession(app, payload?.sessionToken, permission);
+  if (!auth.ok) return auth;
+  const input = { ...(payload || {}), user: payload?.user || auth.user?.name || "CFlow" };
+  return action(input, auth.user);
 }
 
 function logActivity(data, title, text, user, boxId = "") {
@@ -534,10 +465,11 @@ function logActivity(data, title, text, user, boxId = "") {
 
 async function publicSnapshot(app) {
   const data = readStore(app);
+  const localChanged = mergeDeletedBoxes(data, data.deletedBoxes);
   const sync = await pullCloudSnapshot(data);
   await pushCloudClients(data);
   await pushCloudSnapshot(data);
-  if (sync.changed) writeStore(app, data);
+  if (localChanged || sync.changed) writeStore(app, data);
   const warehouse = deriveWarehouse(data.boxes);
   return {
     ok: true,
@@ -869,6 +801,8 @@ async function deleteBox(app, input) {
   if (!box) return { ok: false, error: "Коробка не найдена" };
 
   data.boxes = data.boxes.filter((item) => item.id !== boxId);
+  data.deletedBoxes = data.deletedBoxes || [];
+  mergeDeletedBoxes(data, [{ id: boxId, reason, deletedAt: nowIso() }]);
   data.shipments = data.shipments
     .map((shipment) => ({
       ...shipment,
@@ -885,19 +819,19 @@ async function deleteBox(app, input) {
 }
 
 function registerCflowIpc(ipcMain, app) {
-  ipcMain.handle("cflow-data:snapshot", () => publicSnapshot(app));
-  ipcMain.handle("cflow-data:receive-box", (_event, payload) => receiveBox(app, payload || {}));
-  ipcMain.handle("cflow-data:move-box", (_event, payload) => moveBox(app, payload || {}));
-  ipcMain.handle("cflow-data:issue-box", (_event, payload) => issueBox(app, payload || {}));
-  ipcMain.handle("cflow-data:update-status", (_event, payload) => updateStatus(app, payload || {}));
-  ipcMain.handle("cflow-data:problem-box", (_event, payload) => setProblem(app, payload || {}));
-  ipcMain.handle("cflow-data:create-client", (_event, payload) => createClient(app, payload || {}));
-  ipcMain.handle("cflow-data:add-client-codes", (_event, payload) => addClientCodes(app, payload || {}));
-  ipcMain.handle("cflow-data:save-warehouse-address", (_event, payload) => saveWarehouseAddress(app, payload || {}));
-  ipcMain.handle("cflow-data:issue-client-code", (_event, payload) => issueClientCode(app, payload || {}));
-  ipcMain.handle("cflow-data:create-shipment", (_event, payload) => createShipment(app, payload || {}));
-  ipcMain.handle("cflow-data:record-payment", (_event, payload) => recordPayment(app, payload || {}));
-  ipcMain.handle("cflow-data:delete-box", (_event, payload) => deleteBox(app, payload || {}));
+  ipcMain.handle("cflow-data:snapshot", (_event, payload) => withPermission(app, payload, "search", () => publicSnapshot(app)));
+  ipcMain.handle("cflow-data:receive-box", (_event, payload) => withPermission(app, payload, "receive_box", (input) => receiveBox(app, input)));
+  ipcMain.handle("cflow-data:move-box", (_event, payload) => withPermission(app, payload, "move_box", (input) => moveBox(app, input)));
+  ipcMain.handle("cflow-data:issue-box", (_event, payload) => withPermission(app, payload, "issue_box", (input) => issueBox(app, input)));
+  ipcMain.handle("cflow-data:update-status", (_event, payload) => withPermission(app, payload, "warehouse", (input) => updateStatus(app, input)));
+  ipcMain.handle("cflow-data:problem-box", (_event, payload) => withPermission(app, payload, "warehouse", (input) => setProblem(app, input)));
+  ipcMain.handle("cflow-data:create-client", (_event, payload) => withPermission(app, payload, "clients", (input) => createClient(app, input)));
+  ipcMain.handle("cflow-data:add-client-codes", (_event, payload) => withPermission(app, payload, "all", (input) => addClientCodes(app, input)));
+  ipcMain.handle("cflow-data:save-warehouse-address", (_event, payload) => withPermission(app, payload, "all", (input) => saveWarehouseAddress(app, input)));
+  ipcMain.handle("cflow-data:issue-client-code", (_event, payload) => withPermission(app, payload, "clients", (input) => issueClientCode(app, input)));
+  ipcMain.handle("cflow-data:create-shipment", (_event, payload) => withPermission(app, payload, "warehouse", (input) => createShipment(app, input)));
+  ipcMain.handle("cflow-data:record-payment", (_event, payload) => withPermission(app, payload, "finance", (input) => recordPayment(app, input)));
+  ipcMain.handle("cflow-data:delete-box", (_event, payload) => withPermission(app, payload, "all", (input) => deleteBox(app, input)));
 }
 
 module.exports = {

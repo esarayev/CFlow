@@ -50,3 +50,4 @@ next-env.d.ts
 /telegram-client-site/.wrangler/
 /telegram-client-site/.cloudflare/deploy.json
 /telegram-client-site/.openai/hosting.json
+/telegram-client-site/.git.disabled/

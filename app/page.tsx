@@ -12,6 +12,8 @@ type SessionUser = {
   statusLabel?: string;
 };
 
+type AuthResult = { ok: boolean; error?: string; user?: SessionUser; sessionToken?: string };
+
 type BoxItem = {
   id: string;
   track: string;
@@ -160,13 +162,13 @@ declare global {
   interface Window {
     cflowUsers?: {
       list: () => Promise<SessionUser[]>;
-      authenticate: (username: string, password: string) => Promise<{ ok: boolean; error?: string; user?: SessionUser }>;
+      authenticate: (username: string, password: string) => Promise<AuthResult>;
       create: (user: { name: string; username: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
       update: (user: { id: string; name: string; username: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
       delete: (userId: string) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
     };
     cflowData?: {
-      snapshot: () => Promise<ApiResult>;
+      snapshot: (payload: Record<string, string>) => Promise<ApiResult>;
       receiveBox: (payload: Record<string, string>) => Promise<ApiResult>;
       moveBox: (payload: Record<string, string>) => Promise<ApiResult>;
       issueBox: (payload: Record<string, string>) => Promise<ApiResult>;
@@ -266,6 +268,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [syncStatus, setSyncStatus] = useState<{ status: string; pulledClients?: number } | null>(null);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
+  const [sessionToken, setSessionToken] = useState("");
   const [detailModal, setDetailModal] = useState<DetailModalState>(null);
   const [dashboardPanel, setDashboardPanel] = useState<DashboardPanel>(null);
   const [codesInput, setCodesInput] = useState("");
@@ -303,9 +306,9 @@ export default function Home() {
   const showFinance = sessionUser ? canSeeFinance(sessionUser) : false;
 
   useEffect(() => {
-    if (!sessionUser || !window.cflowData) return;
-    window.cflowData.snapshot().then(applyResult).catch(() => setError("Не удалось загрузить базу CFlow"));
-  }, [sessionUser]);
+    if (!sessionUser || !sessionToken || !window.cflowData) return;
+    window.cflowData.snapshot(securePayload()).then(applyResult).catch(() => setError("Не удалось загрузить базу CFlow"));
+  }, [sessionUser, sessionToken]);
 
   useEffect(() => {
     setAddressInput(data.settings?.chinaAddress || "");
@@ -424,8 +427,9 @@ export default function Home() {
     }
 
     const result = await window.cflowUsers.authenticate(loginName, loginPassword);
-    if (result.ok && result.user) {
+    if (result.ok && result.user && result.sessionToken) {
       setSessionUser(result.user);
+      setSessionToken(result.sessionToken);
       setLoginError("");
       return;
     }
@@ -462,7 +466,7 @@ export default function Home() {
       setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
       return;
     }
-    const result = await window.cflowData.snapshot();
+    const result = await window.cflowData.snapshot(securePayload());
     applyResult(result);
     if (result.ok && result.sync?.status === "connected") {
       setNotice(`Синхронизация выполнена. Клиентов в облаке: ${result.sync.pulledClients || 0}`);
@@ -475,7 +479,7 @@ export default function Home() {
       setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
       return;
     }
-    const result = await window.cflowData.addClientCodes({ codes: codesInput, user: currentUserName() });
+    const result = await window.cflowData.addClientCodes(securePayload({ codes: codesInput }));
     applyResult(result);
     if (result.ok) {
       setCodesInput("");
@@ -489,7 +493,7 @@ export default function Home() {
       setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
       return;
     }
-    const result = await window.cflowData.saveWarehouseAddress({ chinaAddress: addressInput, user: currentUserName() });
+    const result = await window.cflowData.saveWarehouseAddress(securePayload({ chinaAddress: addressInput }));
     applyResult(result);
     if (result.ok) setNotice("Адрес склада сохранен");
   }
@@ -499,7 +503,7 @@ export default function Home() {
       setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
       return;
     }
-    const result = await window.cflowData.issueClientCode({ clientId: client.id, user: currentUserName() });
+    const result = await window.cflowData.issueClientCode(securePayload({ clientId: client.id }));
     applyResult(result);
     if (result.ok) setNotice(`Код закреплен за клиентом ${client.name}`);
   }
@@ -515,7 +519,7 @@ export default function Home() {
       setError("Укажите код клиента и адрес склада в Китае.");
       return;
     }
-    const result = await window.cflowData.createClient({
+    const result = await window.cflowData.createClient(securePayload({
       id: client.id,
       name: client.name,
       phone: client.phone,
@@ -526,14 +530,17 @@ export default function Home() {
       chinaAddress: cleanAddress,
       registrationSource: client.registrationSource || "manual",
       registrationStatus: "approved",
-      user: currentUserName(),
-    });
+    }));
     applyResult(result);
     if (result.ok) setNotice(`Код и адрес выданы клиенту ${client.name}`);
   }
 
   function currentUserName() {
     return sessionUser?.name || "Оператор";
+  }
+
+  function securePayload(payload: Record<string, string> = {}) {
+    return { ...payload, user: currentUserName(), sessionToken };
   }
 
   async function submitAction(event: FormEvent<HTMLFormElement>) {
@@ -544,10 +551,8 @@ export default function Home() {
     }
 
     const boxId = selectedBox?.id || "";
-    const user = currentUserName();
-
     if (actionMode === "receive") {
-      const result = await runApi(window.cflowData.receiveBox({ ...form, user }), "Коробка принята и сохранена");
+      const result = await runApi(window.cflowData.receiveBox(securePayload(form)), "Коробка принята и сохранена");
       if (result.ok) {
         setForm((current) => ({ ...current, track: "", code: "", weight: "", dimensions: "", comment: "", amount: "" }));
         setTimeout(() => trackRef.current?.focus(), 0);
@@ -556,54 +561,52 @@ export default function Home() {
     }
 
     if (actionMode === "issue") {
-      await runApi(window.cflowData.issueBox({ boxId, user }), "Коробка выдана клиенту");
+      await runApi(window.cflowData.issueBox(securePayload({ boxId })), "Коробка выдана клиенту");
       return;
     }
 
     if (actionMode === "status") {
-      await runApi(window.cflowData.updateStatus({ boxId, status: form.nextStatus, user }), "Статус коробки обновлен");
+      await runApi(window.cflowData.updateStatus(securePayload({ boxId, status: form.nextStatus })), "Статус коробки обновлен");
       return;
     }
 
     if (actionMode === "move") {
-      await runApi(window.cflowData.moveBox({ boxId, place: form.place, user }), "Место хранения обновлено");
+      await runApi(window.cflowData.moveBox(securePayload({ boxId, place: form.place })), "Место хранения обновлено");
       return;
     }
 
     if (actionMode === "problem") {
-      await runApi(window.cflowData.problemBox({ boxId, comment: form.comment, user }), "Коробка отмечена как проблемная");
+      await runApi(window.cflowData.problemBox(securePayload({ boxId, comment: form.comment })), "Коробка отмечена как проблемная");
       return;
     }
 
     if (actionMode === "client") {
-      await runApi(window.cflowData.createClient({
+      await runApi(window.cflowData.createClient(securePayload({
         name: form.client,
         phone: form.phone,
         telegram: form.telegram,
         comments: form.comment,
-        user,
-      }), "Клиент сохранен");
+      })), "Клиент сохранен");
       return;
     }
 
     if (actionMode === "shipment") {
       await runApi(
-        window.cflowData.createShipment({
+        window.cflowData.createShipment(securePayload({
           title: form.shipmentTitle,
           type: form.shipmentType,
           route: form.shipmentRoute,
           date: form.shipmentDate,
           boxIds: form.shipmentBoxes,
           cost: form.shipmentCost,
-          user,
-        }),
+        })),
         "Отправка создана",
       );
       return;
     }
 
     if (actionMode === "payment") {
-      await runApi(window.cflowData.recordPayment({ boxId, amount: form.amount, user }), "Оплата проведена");
+      await runApi(window.cflowData.recordPayment(securePayload({ boxId, amount: form.amount })), "Оплата проведена");
     }
   }
 
@@ -631,7 +634,7 @@ export default function Home() {
     if (!confirmed) return;
 
     const result = await runApi(
-      window.cflowData.deleteBox({ boxId, reason: cleanReason, user: currentUserName() }),
+      window.cflowData.deleteBox(securePayload({ boxId, reason: cleanReason })),
       "Коробка удалена из базы",
     );
     if (result.ok) {

@@ -14,6 +14,9 @@ const ownerUser = {
   status: "active",
 };
 
+const activeSessions = new Map();
+const sessionTtlMs = 12 * 60 * 60 * 1000;
+
 function dataDir(app) {
   return path.join(app.getPath("appData"), "CFlow");
 }
@@ -112,6 +115,42 @@ function publicUser(user) {
   };
 }
 
+function createSession(user) {
+  const normalized = normalizeUser(user);
+  const token = crypto.randomUUID();
+  activeSessions.set(token, {
+    token,
+    userId: normalized.id,
+    username: normalized.username,
+    permissions: normalized.permissions,
+    expiresAt: Date.now() + sessionTtlMs,
+  });
+  return token;
+}
+
+function validateSession(app, sessionToken, permission = "search") {
+  const token = String(sessionToken || "");
+  const session = activeSessions.get(token);
+  if (!session || session.expiresAt < Date.now()) {
+    if (session) activeSessions.delete(token);
+    return { ok: false, error: "РЎРµСЃСЃРёСЏ РёСЃС‚РµРєР»Р°. Р’РѕР№РґРёС‚Рµ РІ CFlow Р·Р°РЅРѕРІРѕ." };
+  }
+
+  const user = readUsers(app).find((item) => item.id === session.userId && item.status === "active");
+  if (!user) {
+    activeSessions.delete(token);
+    return { ok: false, error: "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ РЅРµР°РєС‚РёРІРµРЅ. Р’РѕР№РґРёС‚Рµ Р·Р°РЅРѕРІРѕ." };
+  }
+
+  const permissions = normalizeUser(user).permissions || [];
+  if (!permissions.includes("all") && permission && !permissions.includes(permission)) {
+    return { ok: false, error: "РќРµС‚ РїСЂР°РІ РЅР° СЌС‚Рѕ РґРµР№СЃС‚РІРёРµ" };
+  }
+
+  session.expiresAt = Date.now() + sessionTtlMs;
+  return { ok: true, user: publicUser(user) };
+}
+
 function ensureStore(app) {
   fs.mkdirSync(dataDir(app), { recursive: true });
   const file = storePath(app);
@@ -162,7 +201,7 @@ function authenticate(app, username, password) {
       return { ok: false, error: "Неверный логин или пароль" };
     }
 
-    return { ok: true, user: publicUser(user) };
+    return { ok: true, user: publicUser(user), sessionToken: createSession(user) };
   } catch {
     return { ok: false, error: "База пользователей повреждена. Перезапустите приложение." };
   }
@@ -266,4 +305,5 @@ function registerUserIpc(ipcMain, app) {
 
 module.exports = {
   registerUserIpc,
+  validateSession,
 };

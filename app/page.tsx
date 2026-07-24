@@ -339,8 +339,6 @@ export default function Home() {
       phone: current.phone || matchedClient.phone,
       clientCode: current.clientCode || matchedClient.clientCode || "",
       chinaAddress: current.chinaAddress || matchedClient.chinaAddress || "",
-      clientRate: current.clientRate || String(matchedClient.clientRate || ""),
-      chinaRate: current.chinaRate || String(matchedClient.chinaRate || ""),
     }));
   }, [actionMode, matchedClient]);
 
@@ -454,8 +452,6 @@ export default function Home() {
         comments: form.comment,
         clientCode: form.clientCode,
         chinaAddress: form.chinaAddress,
-        clientRate: form.clientRate,
-        chinaRate: form.chinaRate,
         user,
       }), "Клиент сохранен");
       return;
@@ -868,8 +864,6 @@ function ActionForm({
         <label>Телефон<input value={form.phone} onChange={(event) => update("phone", event.target.value)} placeholder="+7..." /></label>
         <label>Telegram<input value={form.telegram} onChange={(event) => update("telegram", event.target.value)} placeholder="@username" /></label>
         <label>Код клиента<input value={form.clientCode} onChange={(event) => update("clientCode", event.target.value)} placeholder="Будет выдан складом в Китае" /></label>
-        <label>Цена клиенту за кг<input value={form.clientRate} onChange={(event) => update("clientRate", event.target.value)} placeholder="2500" /></label>
-        {showFinance ? <label>Цена Китая за кг<input value={form.chinaRate} onChange={(event) => update("chinaRate", event.target.value)} placeholder="1800" /></label> : null}
         <label>Адрес склада в Китае<input value={form.chinaAddress} onChange={(event) => update("chinaAddress", event.target.value)} placeholder="Адрес для покупок клиента" /></label>
         <label>Комментарий<input value={form.comment} onChange={(event) => update("comment", event.target.value)} placeholder="Заметка" /></label>
         <button className="primary" type="submit">Сохранить клиента</button>
@@ -1160,8 +1154,6 @@ function DetailModal({
               <div><dt>Телефон</dt><dd>{client.phone || "Не указан"}</dd></div>
               <div><dt>Telegram</dt><dd>{client.telegram || "Не указан"}</dd></div>
               <div><dt>Адрес склада Китай</dt><dd>{client.chinaAddress || "Не указан"}</dd></div>
-              <div><dt>Тариф клиенту</dt><dd>{client.clientRate ? money(client.clientRate) : "Не указан"}</dd></div>
-              {showFinance ? <div><dt>Цена Китая</dt><dd>{client.chinaRate ? money(client.chinaRate) : "Не указана"}</dd></div> : null}
               <div><dt>Комментарий</dt><dd>{client.comments || "Нет"}</dd></div>
               <div><dt>Коробок</dt><dd>{clientBoxes.length}</dd></div>
             </dl>

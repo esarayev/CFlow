@@ -491,12 +491,13 @@ function receiveBox(app, input) {
     return { ok: false, error: "Коробка с таким кодом уже есть" };
   }
 
-  const client = clientName ? upsertClient(data, { ...input, client: clientName, phone: phone || matchedClient?.phone || "" }) : null;
+  const { clientRate: ignoredClientRate, chinaRate: ignoredChinaRate, ...clientInput } = input;
+  const client = clientName ? upsertClient(data, { ...clientInput, client: clientName, phone: phone || matchedClient?.phone || "" }) : null;
   const id = makeId("CF", data.boxes.length);
   const status = client ? "На складе" : "Без клиента";
   const place = String(input.place || "Зона приемки").trim();
-  const clientRate = toNumber(input.clientRate) || client?.clientRate || 0;
-  const chinaRate = toNumber(input.chinaRate) || client?.chinaRate || 0;
+  const clientRate = toNumber(input.clientRate);
+  const chinaRate = toNumber(input.chinaRate);
   const billableWeight = chargeableWeight(weight, dimensions);
   const costAmount = Math.round(billableWeight * chinaRate);
   const chargeAmount = Math.round(billableWeight * clientRate) || toNumber(input.amount);

@@ -921,3 +921,182 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
     font-size: 12px;
   }
 }
+
+/* Zabota Cargo manager mini app */
+.manage-app {
+  background:
+    radial-gradient(circle at 86% -10%, rgba(216, 170, 66, .15), transparent 34%),
+    linear-gradient(180deg, var(--z-bg) 0%, #F4F0EA 100%);
+  color: var(--z-text);
+}
+
+.manage-app .client-shell-head {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--z-border);
+  background: rgba(252, 251, 249, .94);
+}
+
+.manage-app .brand-logo {
+  width: min(66vw, 260px);
+  height: 82px;
+  overflow: visible;
+}
+
+.manage-app .brand-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: left center;
+  background: transparent;
+}
+
+.manage-app .client-pill {
+  border: 1px solid rgba(216, 170, 66, .28);
+  background: var(--z-accent-soft);
+  color: var(--z-accent-dark);
+}
+
+.manage-app .client-scroll {
+  padding: 16px 16px calc(30px + env(safe-area-inset-bottom));
+}
+
+.manage-app .client-hero {
+  margin-bottom: 14px;
+  padding: 18px 18px;
+  border: 1px solid var(--z-border);
+  border-radius: 20px;
+  background: rgba(252, 251, 249, .92);
+  box-shadow: 0 10px 30px rgba(52, 52, 52, .045);
+}
+
+.manage-app .client-hero span,
+.manage-app .client-section-head span,
+.manage-app .manage-row span,
+.manage-app .manage-row small,
+.manage-app .manage-code-box span,
+.manage-app .manage-code-box small,
+.manage-app .client-form label {
+  color: var(--z-muted);
+}
+
+.manage-app .client-hero h1,
+.manage-app .client-section-head h2,
+.manage-app .manage-row strong,
+.manage-app .manage-code-box strong,
+.manage-app .empty-state strong {
+  color: var(--z-ink);
+}
+
+.manage-app .client-hero h1 {
+  margin: 4px 0 4px;
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.manage-app .client-hero p {
+  margin: 0;
+  color: var(--z-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.manage-app .client-card {
+  border: 1px solid var(--z-border);
+  border-radius: 20px;
+  background: rgba(252, 251, 249, .96);
+  box-shadow: 0 10px 30px rgba(52, 52, 52, .045);
+  padding: 16px;
+}
+
+.manage-app .manage-tabs {
+  border: 1px solid var(--z-border);
+  background: var(--z-card);
+  box-shadow: none;
+}
+
+.manage-app .manage-tabs button {
+  color: var(--z-text);
+}
+
+.manage-app .manage-tabs button.active {
+  background: linear-gradient(135deg, var(--z-accent-light), var(--z-accent-dark));
+  box-shadow: 0 4px 14px rgba(169, 122, 63, .16);
+  color: #fff;
+}
+
+.manage-app .manage-search,
+.manage-app .client-form input {
+  border: 1.5px solid var(--z-border);
+  border-radius: 14px;
+  background: var(--z-bg-alt);
+  box-shadow: none;
+  color: var(--z-ink);
+}
+
+.manage-app .manage-search:focus,
+.manage-app .client-form input:focus {
+  border-color: var(--z-accent);
+  background: var(--z-accent-soft);
+}
+
+.manage-app .manage-row {
+  border: 1px solid var(--z-border);
+  background: var(--z-card);
+  box-shadow: none;
+}
+
+.manage-app .manage-row.active {
+  border-color: rgba(216, 170, 66, .55);
+  background: var(--z-accent-soft);
+  box-shadow: 0 6px 18px rgba(169, 122, 63, .12);
+}
+
+.manage-app .manage-code-box,
+.manage-app .empty-state {
+  border: 1px solid var(--z-border);
+  background: var(--z-bg-alt);
+  box-shadow: none;
+}
+
+.manage-app .primary,
+.manage-app .client-form button[type="submit"] {
+  min-height: 46px;
+  border: 0;
+  border-radius: 15px;
+  font-weight: 800;
+}
+
+.manage-app .primary {
+  background: linear-gradient(135deg, var(--z-accent-light), var(--z-accent), var(--z-accent-dark));
+  box-shadow: 0 8px 24px rgba(169, 122, 63, .24);
+  color: #fff;
+}
+
+.manage-app .client-form button[type="submit"] {
+  border: 1px solid rgba(216, 170, 66, .25);
+  background: var(--z-accent-soft);
+  color: var(--z-accent-dark);
+}
+
+.manage-app .client-notice,
+.manage-app .client-error {
+  margin: 0 0 12px;
+  border-radius: 15px;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.manage-app .client-notice {
+  border: 1px solid rgba(216, 170, 66, .24);
+  background: var(--z-accent-soft);
+  color: var(--z-accent-dark);
+}
+
+.manage-app .client-error {
+  border: 1px solid rgba(214, 90, 90, .24);
+  background: #FDF0F0;
+  color: #D65A5A;
+}

@@ -263,7 +263,7 @@ async function verifyManageInitData(initData: string, env: Env) {
     .filter(Boolean);
   const username = String(verified.user.username || "").replace(/^@/, "").toLowerCase();
   if (!username || !allowed.includes(username)) {
-    return { ok: false as const, error: "Нет доступа к управлению CFlow" };
+    return { ok: false as const, error: "Нет доступа к управлению ZABOTA CARGO" };
   }
   return verified;
 }
@@ -757,7 +757,7 @@ async function issueCodeToClient(env: Env, query: { id?: string; telegramId?: st
   if (!existing) throw new Error("Клиент не найден");
   const settings = await getSettings(env);
   const chinaAddress = String(settings.chinaAddress || "").trim();
-  if (!chinaAddress) throw new Error("Сначала задайте адрес склада в CFlow");
+  if (!chinaAddress) throw new Error("Сначала задайте адрес склада");
 
   let nextCode = existing.client_code;
   if (!nextCode) {
@@ -1158,7 +1158,7 @@ async function handleConfigure(request: Request, env: Env) {
     const manageResponse = await fetch(`https://api.telegram.org/bot${env.CFLOW_MANAGE_TELEGRAM_BOT_TOKEN}/setChatMenuButton`, {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ menu_button: { type: "web_app", text: "CFlow Manage", web_app: { url: manageWebAppUrl } } }),
+      body: JSON.stringify({ menu_button: { type: "web_app", text: "ZABOTA CARGO", web_app: { url: manageWebAppUrl } } }),
     });
     results.manage = await manageResponse.json();
   }

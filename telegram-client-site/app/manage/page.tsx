@@ -101,7 +101,7 @@ export default function ManageMiniApp() {
       }
       if (isMounted) {
         setIsLoading(false);
-        setError("Откройте управление через Telegram-бот CFlow.");
+        setError("Откройте управление через Telegram-бот ZABOTA CARGO.");
       }
     };
 
@@ -160,7 +160,7 @@ export default function ManageMiniApp() {
         }
         setError("");
       })
-      .catch(() => setError("Не удалось подключиться к CFlow."))
+      .catch(() => setError("Не удалось подключиться к сервису."))
       .finally(() => setIsLoading(false));
   }
 
@@ -227,7 +227,7 @@ export default function ManageMiniApp() {
   return (
     <main className="client-app manage-app">
       <header className="client-shell-head">
-        <div className="brand-logo brand-logo-manage"><img src="/cflow-manage-logo.png" alt="CFlow Manage" /></div>
+        <div className="brand-logo brand-logo-manage"><img src="/zabota-cargo-logo.png" alt="ZABOTA CARGO" /></div>
         <span className="client-pill">{clients.length} всего</span>
       </header>
 
@@ -276,7 +276,7 @@ export default function ManageMiniApp() {
               {!filteredClients.length ? (
                 <div className="empty-state">
                   <strong>{mode === "pending" ? "Новых заявок нет" : "Клиентов пока нет"}</strong>
-                  <span>{mode === "pending" ? "Переключитесь на раздел Все клиенты, чтобы увидеть уже подтвержденных и ручных клиентов." : "Откройте основную программу CFlow, чтобы она отправила локальных клиентов в облако."}</span>
+                  <span>{mode === "pending" ? "Переключитесь на раздел Все клиенты, чтобы увидеть уже подтвержденных и ручных клиентов." : "Откройте основную программу, чтобы она отправила локальных клиентов в облако."}</span>
                 </div>
               ) : null}
             </div>

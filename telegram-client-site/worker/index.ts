@@ -93,6 +93,7 @@ const CLIENT_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const CLIENT_CODE_MAX_NUMBER = 999;
 const CLIENT_CODE_CAPACITY = CLIENT_CODE_ALPHABET.length * CLIENT_CODE_MAX_NUMBER;
 const DEFAULT_CHINA_ADDRESS = "浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞";
+let ensureTablesPromise: Promise<void> | null = null;
 
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
@@ -272,6 +273,8 @@ async function verifyManageInitData(initData: string, env: Env) {
 
 async function ensureTables(db?: D1Database) {
   if (!db) return;
+  if (ensureTablesPromise) return ensureTablesPromise;
+  ensureTablesPromise = (async () => {
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS clients (
       id TEXT PRIMARY KEY,
@@ -362,6 +365,11 @@ async function ensureTables(db?: D1Database) {
       deleted_at TEXT NOT NULL
     )
   `).run();
+  })().catch((error) => {
+    ensureTablesPromise = null;
+    throw error;
+  });
+  return ensureTablesPromise;
 }
 
 function publicClient(client: CflowClient | null, boxes: unknown[] = []) {

@@ -627,8 +627,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   display: block;
   width: min(88vw, 360px);
   max-height: 160px;
-  margin-top: -46px;
-  margin-bottom: -34px;
   object-fit: contain;
   object-position: left center;
   background: transparent;
@@ -732,7 +730,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   object-fit: contain;
   object-position: center;
   background: transparent;
-  transform: translateY(-5px);
 }
 
 .neu-mini-head strong {
@@ -900,8 +897,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   .zabota-logo-full {
     width: min(90vw, 320px);
     max-height: 132px;
-    margin-top: -38px;
-    margin-bottom: -28px;
   }
 
   .neu-filter button {

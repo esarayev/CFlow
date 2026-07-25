@@ -85,6 +85,7 @@ const memoryActivity = new Map<string, CflowStoredEntity>();
 const memoryClientCodes = new Map<string, CflowClientCode>();
 const memorySettings = new Map<string, string>();
 const memoryDeletedBoxes = new Map<string, CflowTombstone>();
+const memoryDeletedClients = new Map<string, CflowTombstone>();
 
 const CLIENT_CODE_STATIC_PREFIX = "奇瑞QR 18911759229";
 const CLIENT_CODE_CITY_PREFIX = "AST";
@@ -354,6 +355,13 @@ async function ensureTables(db?: D1Database) {
       deleted_at TEXT NOT NULL
     )
   `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS deleted_clients (
+      id TEXT PRIMARY KEY,
+      reason TEXT DEFAULT '',
+      deleted_at TEXT NOT NULL
+    )
+  `).run();
 }
 
 function publicClient(client: CflowClient | null, boxes: unknown[] = []) {
@@ -441,7 +449,52 @@ async function findClient(env: Env, query: { id?: string; telegramId?: string; p
   return null;
 }
 
+async function findDeletedClient(env: Env, id: string) {
+  await ensureTables(env.DB);
+  const cleanId = normalizeId(id);
+  if (!cleanId) return null;
+  if (!env.DB) return memoryDeletedClients.get(cleanId) || null;
+  return await env.DB.prepare("SELECT * FROM deleted_clients WHERE id = ?").bind(cleanId).first<CflowTombstone>();
+}
+
+async function upsertDeletedClient(env: Env, input: Record<string, unknown>) {
+  await ensureTables(env.DB);
+  const id = normalizeId(String(input.id || input.clientId || ""));
+  if (!id) return null;
+  const deletedAt = String(input.deletedAt || input.deleted_at || nowIso());
+  const tombstone = { id, reason: String(input.reason || "").trim(), deleted_at: deletedAt };
+  memoryDeletedClients.set(id, tombstone);
+  memoryClients.delete(id);
+  for (const [key, code] of memoryClientCodes.entries()) {
+    if (code.client_id === id) {
+      memoryClientCodes.set(key, {
+        ...code,
+        status: "available",
+        client_id: "",
+        client_name: "",
+        assigned_at: "",
+        updated_at: deletedAt,
+      });
+    }
+  }
+  if (!env.DB) return tombstone;
+  await env.DB.prepare("DELETE FROM clients WHERE id = ?").bind(id).run();
+  await env.DB.prepare(`
+    UPDATE client_codes
+    SET status = 'available', client_id = '', client_name = '', assigned_at = '', updated_at = ?
+    WHERE client_id = ?
+  `).bind(deletedAt, id).run();
+  await env.DB.prepare(`
+    INSERT INTO deleted_clients (id, reason, deleted_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET reason = excluded.reason, deleted_at = excluded.deleted_at
+  `).bind(tombstone.id, tombstone.reason, tombstone.deleted_at).run();
+  return tombstone;
+}
+
 async function upsertClient(env: Env, input: Record<string, unknown>) {
+  const deleted = await findDeletedClient(env, String(input.id || ""));
+  if (deleted) return null;
   const existing = await findClient(env, {
     id: String(input.id || ""),
     telegramId: String(input.telegramId || ""),
@@ -510,27 +563,7 @@ async function deleteClient(env: Env, id: string) {
   const boxes = await getBoxes(env, client);
   if (boxes.length) throw new Error("У клиента есть коробки. Сначала разберите связанные грузы в desktop-приложении.");
 
-  memoryClients.delete(cleanId);
-  for (const [key, code] of memoryClientCodes.entries()) {
-    if (code.client_id === cleanId) {
-      memoryClientCodes.set(key, {
-        ...code,
-        status: "available",
-        client_id: "",
-        client_name: "",
-        assigned_at: "",
-        updated_at: nowIso(),
-      });
-    }
-  }
-  if (!env.DB) return client;
-
-  await env.DB.prepare("DELETE FROM clients WHERE id = ?").bind(cleanId).run();
-  await env.DB.prepare(`
-    UPDATE client_codes
-    SET status = 'available', client_id = '', client_name = '', assigned_at = '', updated_at = ?
-    WHERE client_id = ?
-  `).bind(nowIso(), cleanId).run();
+  await upsertDeletedClient(env, { id: cleanId, deletedAt: nowIso() });
   return client;
 }
 
@@ -610,6 +643,13 @@ async function listDeletedBoxes(env: Env) {
   await ensureTables(env.DB);
   if (!env.DB) return [...memoryDeletedBoxes.values()].sort((a, b) => b.deleted_at.localeCompare(a.deleted_at));
   const result = await env.DB.prepare("SELECT * FROM deleted_boxes ORDER BY deleted_at DESC").all<CflowTombstone>();
+  return result.results || [];
+}
+
+async function listDeletedClients(env: Env) {
+  await ensureTables(env.DB);
+  if (!env.DB) return [...memoryDeletedClients.values()].sort((a, b) => b.deleted_at.localeCompare(a.deleted_at));
+  const result = await env.DB.prepare("SELECT * FROM deleted_clients ORDER BY deleted_at DESC").all<CflowTombstone>();
   return result.results || [];
 }
 
@@ -799,12 +839,14 @@ async function issueCodeToClient(env: Env, query: { id?: string; telegramId?: st
     nextCode = await generateAndReserveClientCode(env, existing);
   }
 
-  return await upsertClient(env, {
+  const updated = await upsertClient(env, {
     ...toDesktopClient(existing),
     clientCode: nextCode,
     chinaAddress: existing.china_address || chinaAddress,
     registrationStatus: "approved",
   });
+  if (!updated) throw new Error("Клиент удален");
+  return updated;
 }
 
 function boxStage(status: string) {
@@ -892,6 +934,11 @@ async function cloudSnapshot(env: Env) {
     reason: item.reason,
     deletedAt: item.deleted_at,
   }));
+  const deletedClients = (await listDeletedClients(env)).map((item) => ({
+    id: item.id,
+    reason: item.reason,
+    deletedAt: item.deleted_at,
+  }));
   const settings = await getSettings(env);
   return {
     clients: clients.map(toDesktopClient),
@@ -902,6 +949,7 @@ async function cloudSnapshot(env: Env) {
     activity,
     clientCodes,
     deletedBoxes,
+    deletedClients,
     settings,
   };
 }
@@ -1090,6 +1138,7 @@ async function handleRegister(request: Request, env: Env) {
     telegramId,
     registrationSource: "telegram",
   });
+  if (!client) return json({ ok: false, error: "Заявка была удалена. Напишите менеджеру для повторной регистрации." }, { status: 409 });
   return json({ ok: true, ...publicClient(client, await getBoxes(env, client)) });
 }
 
@@ -1111,6 +1160,7 @@ async function handleAdminUpsertClient(request: Request, env: Env, ctx: Executio
       name: String(body.name || body.fullName || ""),
     });
     const client = await upsertClient(env, { ...body, registrationSource: body.registrationSource || "manual", registrationStatus: body.registrationStatus || "approved" });
+    if (!client) return json({ ok: false, error: "Клиент удален и не будет восстановлен старым snapshot" }, { status: 409 });
     if (shouldNotifyApproval(before, client)) ctx.waitUntil(notifyClientApproved(env, request, client));
     return json({ ok: true, client: toDesktopClient(client) });
   } catch (error) {
@@ -1139,9 +1189,11 @@ async function handleAdminSyncSnapshot(request: Request, env: Env) {
     const activity = Array.isArray(data.activity) ? data.activity : [];
     const clientCodes = Array.isArray(data.clientCodes) ? data.clientCodes : [];
     const deletedBoxes = Array.isArray(data.deletedBoxes) ? data.deletedBoxes : [];
+    const deletedClients = Array.isArray(data.deletedClients) ? data.deletedClients : [];
     const settings = data.settings && typeof data.settings === "object" ? data.settings as Record<string, unknown> : {};
 
     await Promise.all(deletedBoxes.map((item) => upsertDeletedBox(env, item as Record<string, unknown>)));
+    await Promise.all(deletedClients.map((item) => upsertDeletedClient(env, item as Record<string, unknown>)));
     await Promise.all(clients.map((client) => upsertClient(env, client as Record<string, unknown>)));
     await Promise.all(boxes.map((box) => upsertBox(env, box as Record<string, unknown>)));
     await Promise.all(shipments.map((shipment) => upsertEntity(env, "shipments", shipment as Record<string, unknown>, "SHIP")));
@@ -1152,6 +1204,17 @@ async function handleAdminSyncSnapshot(request: Request, env: Env) {
     return json({ ok: true, data: await cloudSnapshot(env) });
   } catch (error) {
     return json({ ok: false, error: error instanceof Error ? error.message : "Snapshot не сохранен" }, { status: 400 });
+  }
+}
+
+async function handleAdminDeleteClient(request: Request, env: Env) {
+  if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
+  try {
+    const body = await request.json() as Record<string, unknown>;
+    const deleted = await deleteClient(env, String(body.clientId || body.id || ""));
+    return json({ ok: true, deletedClientId: deleted.id, data: await cloudSnapshot(env) });
+  } catch (error) {
+    return json({ ok: false, error: error instanceof Error ? error.message : "Клиент не удален" }, { status: 400 });
   }
 }
 
@@ -1217,6 +1280,7 @@ async function handleManageApproveClient(request: Request, env: Env, ctx: Execut
     comments: body.comments || existing.comments,
     registrationStatus: existing.registration_status,
   });
+  if (!client) return json({ ok: false, error: "Клиент удален" }, { status: 409 });
   if (shouldNotifyApproval(existing, client)) ctx.waitUntil(notifyClientApproved(env, request, client));
   return json({ ok: true, client: toDesktopClient(client) });
 }
@@ -1279,6 +1343,7 @@ async function handleApprove(request: Request, env: Env, ctx: ExecutionContext) 
     chinaAddress: body.chinaAddress || existing.china_address,
     registrationStatus: "approved",
   });
+  if (!client) return json({ ok: false, error: "Клиент удален" }, { status: 409 });
   if (shouldNotifyApproval(existing, client)) ctx.waitUntil(notifyClientApproved(env, request, client));
   return json({ ok: true, ...publicClient(client, await getBoxes(env, client)) });
 }
@@ -1337,6 +1402,7 @@ const worker = {
     if (url.pathname === "/api/admin/snapshot/sync" && request.method === "POST") return handleAdminSyncSnapshot(request, env);
     if (url.pathname === "/api/admin/boxes/upsert" && request.method === "POST") return handleAdminUpsertBox(request, env);
     if (url.pathname === "/api/admin/boxes/delete" && request.method === "POST") return handleAdminDeleteBox(request, env);
+    if (url.pathname === "/api/admin/clients/delete" && request.method === "POST") return handleAdminDeleteClient(request, env);
     if (url.pathname === "/api/admin/telegram-clients/approve" && request.method === "POST") return handleApprove(request, env, ctx);
     if (url.pathname === "/api/manage/me" && request.method === "GET") return handleManageMe(request, env);
     if (url.pathname === "/api/manage/clients" && request.method === "GET") return handleManageClients(request, env);

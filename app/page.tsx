@@ -117,6 +117,7 @@ type CflowData = {
   finances: FinanceData;
   activity: ActivityItem[];
   clientCodes: ClientCodeItem[];
+  deletedClients?: { id: string; reason?: string; deletedAt?: string }[];
   settings: SettingsData;
 };
 
@@ -189,6 +190,7 @@ declare global {
       createShipment: (payload: Record<string, string>) => Promise<ApiResult>;
       recordPayment: (payload: Record<string, string>) => Promise<ApiResult>;
       deleteBox: (payload: Record<string, string>) => Promise<ApiResult>;
+      deleteClient: (payload: Record<string, string>) => Promise<ApiResult>;
     };
   }
 }
@@ -897,6 +899,40 @@ export default function Home() {
     }
   }
 
+  async function deleteClient(client: ClientItem) {
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+
+    const linkedBoxes = data.boxes.filter((box) =>
+      box.clientId === client.id ||
+      (client.clientCode && box.clientCode === client.clientCode) ||
+      (client.phone && box.phone === client.phone) ||
+      box.client === client.name,
+    );
+    if (linkedBoxes.length) {
+      setError(`Нельзя удалить клиента: у него есть коробки (${linkedBoxes.length}). Сначала разберите связанные грузы.`);
+      return;
+    }
+
+    const reason = window.prompt(`Причина удаления клиента ${client.name}. Например: тестовая запись или дубль.`);
+    const cleanReason = reason?.trim();
+    if (!cleanReason) {
+      setError("Удаление отменено: нужна причина удаления");
+      return;
+    }
+
+    const confirmed = window.confirm(`Удалить клиента ${client.name} полностью из базы? Причина: ${cleanReason}. Это действие нельзя отменить.`);
+    if (!confirmed) return;
+
+    const result = await runApi(
+      window.cflowData.deleteClient(securePayload({ clientId: client.id, reason: cleanReason })),
+      "Клиент удален из базы",
+    );
+    if (result.ok) setDetailModal(null);
+  }
+
   function openBoxDetail(id: string) {
     setSelectedId(id);
     setDetailModal({ type: "box", id });
@@ -1209,6 +1245,7 @@ export default function Home() {
             onClose={() => setDetailModal(null)}
             onOpenBox={openBoxDetail}
             onDeleteBox={deleteBox}
+            onDeleteClient={deleteClient}
             onCopyText={copyText}
             onIssueClientAccess={issueClientCode}
             availableCodeCount={availableCodeCount}
@@ -1608,6 +1645,7 @@ function DetailModal({
   onClose,
   onOpenBox,
   onDeleteBox,
+  onDeleteClient,
   onCopyText,
   onIssueClientAccess,
   availableCodeCount,
@@ -1621,6 +1659,7 @@ function DetailModal({
   onClose: () => void;
   onOpenBox: (id: string) => void;
   onDeleteBox: (id: string) => void;
+  onDeleteClient: (client: ClientItem) => void;
   onCopyText: (text: string, success: string) => void;
   onIssueClientAccess: (client: ClientItem) => void;
   availableCodeCount: number;
@@ -1733,6 +1772,13 @@ function DetailModal({
             </div>
             <div className="detail-actions">
               <button className="primary" type="button" onClick={() => onCopyText(clientInstruction(client), "Инструкция клиенту скопирована")}>Скопировать инструкцию клиенту</button>
+            </div>
+            <div className="modal-danger">
+              <div>
+                <strong>Удалить клиента</strong>
+                <p>{clientBoxes.length ? "У клиента есть связанные коробки, поэтому удаление заблокировано." : "Подходит для тестовых записей и дублей без грузов."}</p>
+              </div>
+              <button className="danger-button" type="button" disabled={clientBoxes.length > 0} onClick={() => onDeleteClient(client)}>Удалить клиента</button>
             </div>
             <div className="modal-section">
               <div className="panel-head compact">

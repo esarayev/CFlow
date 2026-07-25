@@ -341,15 +341,15 @@ function normalizeDeletedBox(input) {
   };
 }
 
-function mergeDeletedBoxes(data, incoming) {
+function mergeTombstones(items, incoming, normalize) {
   let changed = false;
-  const existingById = new Map((data.deletedBoxes || []).map((item) => [String(item.id || ""), item]));
+  const existingById = new Map((items || []).map((item) => [String(item.id || ""), item]));
   (Array.isArray(incoming) ? incoming : []).forEach((item) => {
-    const next = normalizeDeletedBox(item);
+    const next = normalize(item);
     if (!next.id) return;
     const existing = existingById.get(next.id);
     if (!existing) {
-      data.deletedBoxes.unshift(next);
+      items.unshift(next);
       existingById.set(next.id, next);
       changed = true;
       return;
@@ -359,10 +359,51 @@ function mergeDeletedBoxes(data, incoming) {
       changed = true;
     }
   });
+  return changed;
+}
+
+function normalizeDeletedClient(input) {
+  return {
+    id: String(input?.id || input?.clientId || "").trim(),
+    reason: String(input?.reason || "").trim(),
+    deletedAt: String(input?.deletedAt || input?.deleted_at || nowIso()),
+  };
+}
+
+function mergeDeletedBoxes(data, incoming) {
+  data.deletedBoxes = data.deletedBoxes || [];
+  const changed = mergeTombstones(data.deletedBoxes, incoming, normalizeDeletedBox);
   const deletedIds = new Set((data.deletedBoxes || []).map((item) => item.id));
   const before = data.boxes.length;
   data.boxes = data.boxes.filter((box) => !deletedIds.has(box.id));
   return changed || before !== data.boxes.length;
+}
+
+function releaseClientCodes(data, deletedIds) {
+  let changed = false;
+  data.clientCodes = (data.clientCodes || []).map((item) => {
+    if (!deletedIds.has(item.clientId)) return item;
+    changed = true;
+    return {
+      ...item,
+      status: "available",
+      clientId: "",
+      clientName: "",
+      assignedAt: "",
+      updatedAt: nowIso(),
+    };
+  });
+  return changed;
+}
+
+function mergeDeletedClients(data, incoming) {
+  data.deletedClients = data.deletedClients || [];
+  const changed = mergeTombstones(data.deletedClients, incoming, normalizeDeletedClient);
+  const deletedIds = new Set((data.deletedClients || []).map((item) => item.id));
+  const before = data.clients.length;
+  data.clients = data.clients.filter((client) => !deletedIds.has(client.id));
+  const codesChanged = releaseClientCodes(data, deletedIds);
+  return changed || codesChanged || before !== data.clients.length;
 }
 
 async function pullCloudSnapshot(data) {
@@ -381,6 +422,7 @@ async function pullCloudSnapshot(data) {
   changed = mergeById(data.activity, snapshot.activity) || changed;
   changed = mergeClientCodes(data, snapshot.clientCodes) || changed;
   changed = mergeDeletedBoxes(data, snapshot.deletedBoxes) || changed;
+  changed = mergeDeletedClients(data, snapshot.deletedClients) || changed;
   if (snapshot.settings && typeof snapshot.settings === "object") {
     const nextSettings = { ...data.settings, ...snapshot.settings };
     if (JSON.stringify(nextSettings) !== JSON.stringify(data.settings)) {
@@ -459,6 +501,7 @@ function emptyStore() {
     activity: [],
     clientCodes: [],
     deletedBoxes: [],
+    deletedClients: [],
     settings: {
       chinaAddress: DEFAULT_CHINA_ADDRESS,
     },
@@ -514,6 +557,7 @@ function readStore(app) {
     activity: Array.isArray(data.activity) ? data.activity : [],
     clientCodes: Array.isArray(data.clientCodes) ? data.clientCodes.map((item, index) => normalizeClientCodeItem(item, index)).filter((item) => item.code) : [],
     deletedBoxes: Array.isArray(data.deletedBoxes) ? data.deletedBoxes.map(normalizeDeletedBox).filter((item) => item.id) : [],
+    deletedClients: Array.isArray(data.deletedClients) ? data.deletedClients.map(normalizeDeletedClient).filter((item) => item.id) : [],
     settings: { ...defaults.settings, ...(data.settings || {}) },
     finances: { ...defaults.finances, ...(data.finances || {}) },
   };
@@ -545,7 +589,8 @@ function logActivity(data, title, text, user, boxId = "") {
 
 async function publicSnapshot(app) {
   const data = readStore(app);
-  const localChanged = mergeDeletedBoxes(data, data.deletedBoxes);
+  let localChanged = mergeDeletedBoxes(data, data.deletedBoxes);
+  localChanged = mergeDeletedClients(data, data.deletedClients) || localChanged;
   const sync = await pullCloudSnapshot(data);
   await pushCloudClients(data);
   await pushCloudSnapshot(data);
@@ -910,6 +955,38 @@ async function deleteBox(app, input) {
   return publicSnapshot(app);
 }
 
+async function deleteClient(app, input) {
+  const data = readStore(app);
+  const clientId = String(input.clientId || "").trim();
+  const reason = String(input.reason || "").trim();
+  if (!clientId) return { ok: false, error: "Выберите клиента" };
+  if (!reason) return { ok: false, error: "Укажите причину удаления" };
+
+  const client = data.clients.find((item) => item.id === clientId);
+  if (!client) return { ok: false, error: "Клиент не найден" };
+
+  const linkedBoxes = data.boxes.filter((box) =>
+    box.clientId === client.id ||
+    (client.clientCode && box.clientCode === client.clientCode) ||
+    (client.phone && box.phone === client.phone) ||
+    box.client === client.name,
+  );
+  if (linkedBoxes.length) {
+    return { ok: false, error: `У клиента есть коробки: ${linkedBoxes.length}. Сначала разберите связанные грузы.` };
+  }
+
+  data.clients = data.clients.filter((item) => item.id !== clientId);
+  data.deletedClients = data.deletedClients || [];
+  mergeDeletedClients(data, [{ id: clientId, reason, deletedAt: nowIso() }]);
+  logActivity(data, "Удаление клиента", `${client.name} удален из базы. Причина: ${reason}`, input.user || "Оператор");
+  writeStore(app, data);
+  await cloudRequest("/api/admin/clients/delete", {
+    method: "POST",
+    body: JSON.stringify({ clientId, reason }),
+  });
+  return publicSnapshot(app);
+}
+
 function registerCflowIpc(ipcMain, app) {
   ipcMain.handle("cflow-data:snapshot", (_event, payload) => withPermission(app, payload, "search", () => publicSnapshot(app)));
   ipcMain.handle("cflow-data:receive-box", (_event, payload) => withPermission(app, payload, "receive_box", (input) => receiveBox(app, input)));
@@ -924,6 +1001,7 @@ function registerCflowIpc(ipcMain, app) {
   ipcMain.handle("cflow-data:create-shipment", (_event, payload) => withPermission(app, payload, "warehouse", (input) => createShipment(app, input)));
   ipcMain.handle("cflow-data:record-payment", (_event, payload) => withPermission(app, payload, "finance", (input) => recordPayment(app, input)));
   ipcMain.handle("cflow-data:delete-box", (_event, payload) => withPermission(app, payload, "all", (input) => deleteBox(app, input)));
+  ipcMain.handle("cflow-data:delete-client", (_event, payload) => withPermission(app, payload, "all", (input) => deleteClient(app, input)));
 }
 
 module.exports = {

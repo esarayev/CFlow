@@ -127,6 +127,10 @@ type ApiResult = {
   sync?: { status: string; pulledClients?: number };
 };
 
+type ApplyResultOptions = {
+  silentSyncError?: boolean;
+};
+
 type ActionMode = "receive" | "issue" | "move" | "client" | "shipment" | "payment" | "problem" | "status";
 type DashboardPanel = "codes" | "address" | null;
 type DetailModalState = { type: "box"; id: string } | { type: "client"; id: string } | null;
@@ -482,6 +486,7 @@ function isWaitingIssue(box: BoxItem) {
 export default function Home() {
   const searchRef = useRef<HTMLInputElement>(null);
   const trackRef = useRef<HTMLInputElement>(null);
+  const syncInFlightRef = useRef(false);
   const [data, setData] = useState<CflowData>(fallbackData);
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
@@ -530,6 +535,27 @@ export default function Home() {
   useEffect(() => {
     if (!sessionUser || !sessionToken || !window.cflowData) return;
     window.cflowData.snapshot(securePayload()).then(applyResult).catch(() => setError("Не удалось загрузить базу CFlow"));
+  }, [sessionUser, sessionToken]);
+
+  useEffect(() => {
+    if (!sessionUser || !sessionToken || !window.cflowData) return;
+
+    const syncSilently = () => {
+      void syncNow({ silent: true });
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") syncSilently();
+    };
+
+    const intervalId = window.setInterval(syncSilently, 30000);
+    window.addEventListener("focus", syncSilently);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", syncSilently);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [sessionUser, sessionToken]);
 
   useEffect(() => {
@@ -621,7 +647,7 @@ export default function Home() {
     { label: "Проблемные", value: String(data.boxes.filter(isProblem).length), delta: "требуют проверки", tone: "red" },
   ];
 
-  function applyResult(result: ApiResult) {
+  function applyResult(result: ApiResult, options: ApplyResultOptions = {}) {
     if (!result.ok || !result.data) {
       setError(result.error || "Операция не выполнена");
       return;
@@ -629,7 +655,10 @@ export default function Home() {
 
     if (result.sync) {
       setSyncStatus(result.sync);
-      if (result.sync.status === "cloud_token_missing") {
+      if (options.silentSyncError) {
+        // Фоновая синхронизация не должна сбивать оператора сообщениями,
+        // ручная кнопка синхронизации покажет причину ошибки явно.
+      } else if (result.sync.status === "cloud_token_missing") {
         setError("Облако не подключено: в Windows не задан CFLOW_ADMIN_TOKEN. Telegram-заявки не подтянутся в десктоп.");
       } else if (result.sync.status !== "connected") {
         setError(`Облако не подключилось: ${result.sync.status}`);
@@ -692,15 +721,23 @@ export default function Home() {
     return result;
   }
 
-  async function syncNow() {
+  async function syncNow(options: { silent?: boolean } = {}) {
     if (!window.cflowData) {
-      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      if (!options.silent) setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
       return;
     }
-    const result = await window.cflowData.snapshot(securePayload());
-    applyResult(result);
-    if (result.ok && result.sync?.status === "connected") {
-      setNotice(`Синхронизация выполнена. Клиентов в облаке: ${result.sync.pulledClients || 0}`);
+    if (syncInFlightRef.current) return;
+    syncInFlightRef.current = true;
+    try {
+      const result = await window.cflowData.snapshot(securePayload());
+      applyResult(result, { silentSyncError: options.silent });
+      if (!options.silent && result.ok && result.sync?.status === "connected") {
+        setNotice(`Синхронизация выполнена. Клиентов в облаке: ${result.sync.pulledClients || 0}`);
+      }
+    } catch {
+      if (!options.silent) setError("Не удалось синхронизировать данные с облаком");
+    } finally {
+      syncInFlightRef.current = false;
     }
   }
 
@@ -1063,7 +1100,7 @@ export default function Home() {
             />
           </label>
           <div className="top-actions">
-            <button type="button" onClick={syncNow}>Синхронизировать</button>
+            <button type="button" onClick={() => void syncNow()}>Синхронизировать</button>
             <button type="button" onClick={() => { setActiveNav("Коробки"); setAction("receive"); }}>Принять</button>
             <button type="button" className="primary" onClick={() => { setActiveNav("Коробки"); setAction("issue"); }}>Выдать</button>
           </div>

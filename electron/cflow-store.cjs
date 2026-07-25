@@ -60,6 +60,27 @@ function cleanName(value, fallback = "") {
   return name && !isCorruptText(name) ? name : fallback;
 }
 
+function cleanDisplayText(value, fallback = "") {
+  const text = String(value || "").trim();
+  return text && !isCorruptText(text) ? text : fallback;
+}
+
+function cleanActivityForDisplay(item) {
+  const title = cleanDisplayText(item?.title, "Старая запись истории");
+  const text = cleanDisplayText(
+    item?.text,
+    "Эта запись была сохранена в старой кодировке. Новые действия будут отображаться нормально.",
+  );
+  const user = cleanDisplayText(item?.user, "Система");
+  return {
+    ...item,
+    title,
+    text,
+    user,
+    displayTime: displayTime(item?.time),
+  };
+}
+
 function codeSuffixFromIndex(index) {
   const letter = CLIENT_CODE_ALPHABET[Math.floor(index / CLIENT_CODE_MAX_NUMBER)];
   const number = (index % CLIENT_CODE_MAX_NUMBER) + 1;
@@ -536,7 +557,7 @@ async function publicSnapshot(app) {
     data: {
       ...data,
       warehouse,
-      activity: data.activity.map((item) => ({ ...item, displayTime: displayTime(item.time) })),
+      activity: data.activity.map(cleanActivityForDisplay),
     },
   };
 }

@@ -16,6 +16,7 @@ interface ExecutionContext {
 
 type RegistrationSource = "manual" | "telegram";
 type RegistrationStatus = "pending" | "approved" | "rejected";
+type BroadcastAudience = "approved" | "telegram" | "pending";
 
 type CflowClient = {
   id: string;
@@ -906,6 +907,17 @@ async function telegramApi(env: Env, method: string, payload: Record<string, unk
   return await response.json() as Record<string, unknown>;
 }
 
+async function telegramMultipartApi(env: Env, method: string, payload: Record<string, string | Blob>) {
+  if (!env.CFLOW_TELEGRAM_BOT_TOKEN) return { ok: false, skipped: true, error: "Бот не настроен" };
+  const form = new FormData();
+  Object.entries(payload).forEach(([key, value]) => form.append(key, value));
+  const response = await fetch(`https://api.telegram.org/bot${env.CFLOW_TELEGRAM_BOT_TOKEN}/${method}`, {
+    method: "POST",
+    body: form,
+  });
+  return await response.json() as Record<string, unknown>;
+}
+
 async function sendClientLaunchMessage(env: Env, chatId: string | number, webAppUrl: string) {
   return await telegramApi(env, "sendMessage", {
     chat_id: chatId,
@@ -915,6 +927,67 @@ async function sendClientLaunchMessage(env: Env, chatId: string | number, webApp
       "Нажмите кнопку ниже, чтобы открыть личный кабинет, пройти регистрацию, получить код клиента и смотреть статусы посылок.",
     ].join("\n"),
     reply_markup: telegramReplyKeyboard(webAppUrl),
+  });
+}
+
+function parseDataUrl(value: string) {
+  const match = String(value || "").match(/^data:(image\/(?:png|jpeg|jpg|webp));base64,(.+)$/i);
+  if (!match) return null;
+  const mime = match[1].replace("image/jpg", "image/jpeg");
+  const binary = atob(match[2]);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return { mime, blob: new Blob([bytes], { type: mime }) };
+}
+
+function broadcastText(title: string, message: string) {
+  return [
+    title ? `<b>${escapeHtml(title)}</b>` : "",
+    escapeHtml(message),
+  ].filter(Boolean).join("\n\n");
+}
+
+function broadcastRecipients(clients: CflowClient[], audience: BroadcastAudience) {
+  const seen = new Set<string>();
+  return clients.filter((client) => {
+    if (!client.telegram_id || seen.has(client.telegram_id)) return false;
+    if (audience === "approved" && client.registration_status !== "approved") return false;
+    if (audience === "pending" && client.registration_status === "approved") return false;
+    seen.add(client.telegram_id);
+    return true;
+  });
+}
+
+async function sendBroadcastMessage(env: Env, request: Request, client: CflowClient, payload: { title: string; message: string; imageData: string }) {
+  const text = broadcastText(payload.title, payload.message);
+  const image = parseDataUrl(payload.imageData);
+  const replyMarkup = JSON.stringify(telegramReplyKeyboard(clientWebAppUrl(request, env)));
+
+  if (image) {
+    const caption = text.length <= 1000 ? text : "";
+    const photoResult = await telegramMultipartApi(env, "sendPhoto", {
+      chat_id: client.telegram_id,
+      photo: image.blob,
+      caption,
+      parse_mode: "HTML",
+      reply_markup: replyMarkup,
+    });
+    if (text.length > 1000) {
+      await telegramApi(env, "sendMessage", {
+        chat_id: client.telegram_id,
+        parse_mode: "HTML",
+        text,
+        reply_markup: telegramReplyKeyboard(clientWebAppUrl(request, env)),
+      });
+    }
+    return photoResult;
+  }
+
+  return await telegramApi(env, "sendMessage", {
+    chat_id: client.telegram_id,
+    parse_mode: "HTML",
+    text,
+    reply_markup: telegramReplyKeyboard(clientWebAppUrl(request, env)),
   });
 }
 
@@ -1114,6 +1187,41 @@ async function handleManageApproveClient(request: Request, env: Env, ctx: Execut
   return json({ ok: true, client: toDesktopClient(client) });
 }
 
+async function handleManageBroadcast(request: Request, env: Env) {
+  const body = await request.json() as {
+    initData?: string;
+    audience?: BroadcastAudience;
+    title?: string;
+    message?: string;
+    imageData?: string;
+  };
+  const verified = await verifyManageInitData(body.initData || "", env);
+  if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
+
+  const title = String(body.title || "").trim();
+  const message = String(body.message || "").trim();
+  const imageData = String(body.imageData || "");
+  const audience = body.audience === "telegram" || body.audience === "pending" ? body.audience : "approved";
+  if (!title && !message) return json({ ok: false, error: "Добавьте заголовок или текст сообщения" }, { status: 400 });
+  if (imageData && !parseDataUrl(imageData)) return json({ ok: false, error: "Неверный формат изображения" }, { status: 400 });
+
+  const clients = await listClients(env);
+  const recipients = broadcastRecipients(clients, audience);
+  if (!recipients.length) return json({ ok: false, error: "Нет получателей с Telegram" }, { status: 400 });
+
+  let sent = 0;
+  for (const client of recipients) {
+    try {
+      const result = await sendBroadcastMessage(env, request, client, { title, message, imageData });
+      if ((result as { ok?: boolean }).ok) sent += 1;
+    } catch {
+      // Keep sending to the next client; the response returns the final delivery count.
+    }
+  }
+
+  return json({ ok: sent > 0, sent, total: recipients.length });
+}
+
 async function handleApprove(request: Request, env: Env, ctx: ExecutionContext) {
   if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
   const body = await request.json() as { telegramId?: string; clientCode?: string; chinaAddress?: string };
@@ -1188,6 +1296,7 @@ const worker = {
     if (url.pathname === "/api/manage/clients" && request.method === "GET") return handleManageClients(request, env);
     if (url.pathname === "/api/manage/clients/issue-code" && request.method === "POST") return handleManageIssueClientCode(request, env, ctx);
     if (url.pathname === "/api/manage/clients/approve" && request.method === "POST") return handleManageApproveClient(request, env, ctx);
+    if (url.pathname === "/api/manage/broadcast" && request.method === "POST") return handleManageBroadcast(request, env);
     if (url.pathname === "/api/telegram/configure" && request.method === "POST") return handleConfigure(request, env);
     if (url.pathname === "/api/telegram/client-webhook" && request.method === "POST") return handleClientTelegramWebhook(request, env);
     return handler.fetch(request, env, ctx);

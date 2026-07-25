@@ -32,6 +32,16 @@ type SettingsData = {
 };
 
 type ViewMode = "pending" | "all";
+type ManageSection = "clients" | "broadcast";
+type BroadcastAudience = "approved" | "telegram" | "pending";
+
+type BroadcastDraft = {
+  audience: BroadcastAudience;
+  title: string;
+  message: string;
+  imageData: string;
+  imageName: string;
+};
 
 const clientCodeCapacity = 26 * 999;
 const generatedCodePattern = /AST\s+[A-Z]\d{3}$/i;
@@ -68,6 +78,22 @@ function searchableText(client: ManageClient) {
   ].filter(Boolean).join(" ").toLowerCase();
 }
 
+function emptyBroadcastDraft(): BroadcastDraft {
+  return {
+    audience: "approved",
+    title: "",
+    message: "",
+    imageData: "",
+    imageName: "",
+  };
+}
+
+function audienceLabel(audience: BroadcastAudience) {
+  if (audience === "telegram") return "Все Telegram-клиенты";
+  if (audience === "pending") return "Заявки на проверке";
+  return "Подтвержденные клиенты";
+}
+
 export default function ManageMiniApp() {
   const [initData, setInitData] = useState("");
   const [clients, setClients] = useState<ManageClient[]>([]);
@@ -75,6 +101,8 @@ export default function ManageMiniApp() {
   const [settings, setSettings] = useState<SettingsData>({});
   const [selectedId, setSelectedId] = useState("");
   const [draft, setDraft] = useState<Draft>(emptyDraft());
+  const [section, setSection] = useState<ManageSection>("clients");
+  const [broadcastDraft, setBroadcastDraft] = useState<BroadcastDraft>(emptyBroadcastDraft());
   const [mode, setMode] = useState<ViewMode>("pending");
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -135,6 +163,14 @@ export default function ManageMiniApp() {
     return base.filter((client) => searchableText(client).includes(needle));
   }, [clients, mode, pendingClients, query]);
   const selectedClient = clients.find((client) => client.id === selectedId) || filteredClients[0] || pendingClients[0] || clients[0];
+  const broadcastRecipientsCount = useMemo(() => {
+    return clients.filter((client) => {
+      if (!client.telegramId) return false;
+      if (broadcastDraft.audience === "telegram") return true;
+      if (broadcastDraft.audience === "pending") return client.registrationStatus !== "approved";
+      return client.registrationStatus === "approved";
+    }).length;
+  }, [broadcastDraft.audience, clients]);
 
   useEffect(() => {
     if (!selectedClient) return;
@@ -166,6 +202,67 @@ export default function ManageMiniApp() {
 
   function update(field: keyof Draft, value: string) {
     setDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateBroadcast(field: keyof BroadcastDraft, value: string) {
+    setBroadcastDraft((current) => ({ ...current, [field]: value }));
+  }
+
+  function attachBroadcastImage(file?: File) {
+    if (!file) {
+      updateBroadcast("imageData", "");
+      updateBroadcast("imageName", "");
+      return;
+    }
+    if (file.size > 4 * 1024 * 1024) {
+      setError("Картинка слишком большая. Выберите файл до 4 МБ.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setBroadcastDraft((current) => ({ ...current, imageData: String(reader.result || ""), imageName: file.name }));
+      setError("");
+    };
+    reader.onerror = () => setError("Не удалось прочитать изображение.");
+    reader.readAsDataURL(file);
+  }
+
+  function sendBroadcast(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const title = broadcastDraft.title.trim();
+    const message = broadcastDraft.message.trim();
+    if (!title && !message) {
+      setError("Добавьте заголовок или текст сообщения.");
+      return;
+    }
+    if (broadcastRecipientsCount <= 0) {
+      setError("В выбранной аудитории нет клиентов с Telegram.");
+      return;
+    }
+    if (!window.confirm(`Отправить сообщение: ${audienceLabel(broadcastDraft.audience)}, получателей ${broadcastRecipientsCount}?`)) return;
+    setIsLoading(true);
+    fetch("/api/manage/broadcast", {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        initData,
+        ...broadcastDraft,
+        title,
+        message,
+      }),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!data.ok) {
+          setError(data.error || "Сообщение не отправлено.");
+          return;
+        }
+        setNotice(`Рассылка отправлена: ${data.sent} из ${data.total}.`);
+        setBroadcastDraft(emptyBroadcastDraft());
+        setError("");
+      })
+      .catch(() => setError("Не удалось отправить рассылку."))
+      .finally(() => setIsLoading(false));
   }
 
   function approve(event: FormEvent<HTMLFormElement>) {
@@ -238,11 +335,20 @@ export default function ManageMiniApp() {
           <p>Здесь видны новые регистрации из Telegram и клиенты, добавленные вручную в основной программе.</p>
         </section>
 
+        <nav className="manage-section-tabs" aria-label="Разделы управления">
+          <button className={section === "clients" ? "active" : ""} type="button" onClick={() => setSection("clients")}>
+            Клиенты
+          </button>
+          <button className={section === "broadcast" ? "active" : ""} type="button" onClick={() => setSection("broadcast")}>
+            Сообщение
+          </button>
+        </nav>
+
         {notice ? <p className="client-notice">{notice}</p> : null}
         {error ? <p className="client-error">{error}</p> : null}
         {isLoading ? <p className="client-notice">Загружаем...</p> : null}
 
-        <section className="manage-grid">
+        {section === "clients" ? <section className="manage-grid">
           <article className="client-card">
             <div className="client-section-head">
               <h2>Реестр</h2>
@@ -305,7 +411,58 @@ export default function ManageMiniApp() {
               <button type="submit" disabled={isLoading}>Сохранить комментарий</button>
             </form>
           ) : null}
-        </section>
+        </section> : (
+          <section className="broadcast-grid">
+            <form className="client-card client-form broadcast-form" onSubmit={sendBroadcast}>
+              <div className="client-section-head">
+                <h2>Новое сообщение</h2>
+                <span>{broadcastRecipientsCount} получателей</span>
+              </div>
+
+              <label>
+                Аудитория
+                <select value={broadcastDraft.audience} onChange={(event) => updateBroadcast("audience", event.target.value as BroadcastAudience)}>
+                  <option value="approved">Подтвержденные клиенты</option>
+                  <option value="telegram">Все Telegram-клиенты</option>
+                  <option value="pending">Заявки на проверке</option>
+                </select>
+              </label>
+              <label>
+                Заголовок
+                <input value={broadcastDraft.title} onChange={(event) => updateBroadcast("title", event.target.value)} placeholder="Например: Поступление товара" />
+              </label>
+              <label>
+                Текст
+                <textarea value={broadcastDraft.message} onChange={(event) => updateBroadcast("message", event.target.value)} placeholder="Напишите сообщение клиентам" rows={7} />
+              </label>
+              <label>
+                Изображение
+                <input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => attachBroadcastImage(event.target.files?.[0])} />
+              </label>
+              {broadcastDraft.imageName ? (
+                <button type="button" onClick={() => attachBroadcastImage(undefined)}>
+                  Убрать изображение
+                </button>
+              ) : null}
+              <button className="primary" type="submit" disabled={isLoading || broadcastRecipientsCount <= 0}>
+                Отправить в Telegram
+              </button>
+            </form>
+
+            <article className="client-card broadcast-preview">
+              <div className="client-section-head">
+                <h2>Предпросмотр</h2>
+                <span>{audienceLabel(broadcastDraft.audience)}</span>
+              </div>
+              {broadcastDraft.imageData ? <img src={broadcastDraft.imageData} alt="Предпросмотр сообщения" /> : null}
+              <div className="broadcast-message-preview">
+                {broadcastDraft.title.trim() ? <strong>{broadcastDraft.title.trim()}</strong> : null}
+                {broadcastDraft.message.trim() ? <p>{broadcastDraft.message.trim()}</p> : <p>Текст сообщения появится здесь.</p>}
+              </div>
+              <small>В Telegram сообщение уйдет от клиентского бота ZABOTA CARGO. Клиенты смогут открыть кабинет через кнопку под сообщением.</small>
+            </article>
+          </section>
+        )}
       </section>
     </main>
   );

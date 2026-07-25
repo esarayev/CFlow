@@ -537,6 +537,89 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 }
 .manage-code-box strong { color: var(--ink); font-size: 18px; line-height: 1.15; }
 .manage-code-box span, .manage-code-box small { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.manage-section-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+  border-radius: 18px;
+  background: var(--neu-bg);
+  box-shadow: inset 4px 4px 10px var(--neu-dark), inset -4px -4px 10px var(--neu-light);
+  padding: 6px;
+}
+.manage-section-tabs button {
+  min-height: 42px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+}
+.manage-section-tabs button.active {
+  background: linear-gradient(135deg, var(--z-accent-light), var(--z-accent), var(--z-accent-dark));
+  box-shadow: 0 8px 20px rgba(169, 122, 63, .2);
+  color: #fff;
+}
+.broadcast-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+.broadcast-form select,
+.broadcast-form input[type="file"] {
+  width: 100%;
+  min-height: 46px;
+  border: 1.5px solid var(--z-border);
+  border-radius: 14px;
+  background: var(--z-bg-alt);
+  color: var(--z-ink);
+  font: inherit;
+  padding: 0 12px;
+}
+.broadcast-form input[type="file"] {
+  padding: 11px 12px;
+}
+.broadcast-form textarea {
+  min-height: 138px;
+  resize: vertical;
+  padding: 12px;
+  line-height: 1.45;
+}
+.broadcast-preview {
+  display: grid;
+  gap: 12px;
+}
+.broadcast-preview img {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  object-fit: cover;
+  border-radius: 18px;
+  border: 1px solid var(--z-border);
+}
+.broadcast-message-preview {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
+  background: var(--z-bg-alt);
+  border: 1px solid var(--z-border);
+}
+.broadcast-message-preview strong {
+  color: var(--z-ink);
+  font-size: 17px;
+  line-height: 1.25;
+}
+.broadcast-message-preview p {
+  margin: 0;
+  color: var(--z-text);
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+.broadcast-preview small {
+  color: var(--z-muted);
+  line-height: 1.4;
+}
 .client-section-head {
   display: flex;
   justify-content: space-between;

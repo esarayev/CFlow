@@ -466,6 +466,24 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .client-form { display: grid; gap: 12px; margin-top: 12px; }
 .client-form label { display: grid; gap: 7px; color: var(--muted); font-size: 13px; }
 
+.manage-app {
+  display: flex;
+  flex-direction: column;
+}
+
+.manage-app .client-shell-head {
+  flex: 0 0 auto;
+}
+
+.manage-app .client-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(28px + env(safe-area-inset-bottom));
+}
+
 .manage-grid { display: grid; gap: 12px; margin-top: 12px; }
 .manage-list { display: grid; gap: 8px; }
 .manage-tabs {

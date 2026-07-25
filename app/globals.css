@@ -1159,6 +1159,176 @@ h2 {
   padding: 16px;
 }
 
+.knowledge-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.knowledge-head {
+  align-items: start;
+}
+
+.knowledge-head .lead {
+  max-width: 680px;
+  margin-top: 6px;
+}
+
+.knowledge-search {
+  display: grid;
+  gap: 7px;
+  width: min(360px, 100%);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.knowledge-search input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 13px;
+  background: var(--panel-soft);
+  color: var(--text);
+  font: inherit;
+}
+
+.knowledge-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.knowledge-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 0 13px;
+  white-space: nowrap;
+}
+
+.knowledge-tabs button.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.knowledge-tabs button strong {
+  display: inline-grid;
+  min-width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(60, 83, 139, 0.12);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.knowledge-tabs button.active strong {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.knowledge-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.knowledge-summary {
+  position: sticky;
+  top: 84px;
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.knowledge-summary h3,
+.knowledge-card h3 {
+  margin: 0;
+}
+
+.knowledge-summary div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.knowledge-summary div:last-of-type {
+  border-bottom: 0;
+}
+
+.knowledge-summary span,
+.knowledge-summary p,
+.knowledge-card p,
+.knowledge-card li {
+  color: var(--muted);
+}
+
+.knowledge-summary p {
+  margin: 6px 0 0;
+  line-height: 1.45;
+}
+
+.knowledge-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.knowledge-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.knowledge-card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: start;
+}
+
+.knowledge-card ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+
+.knowledge-card li {
+  line-height: 1.45;
+}
+
+.knowledge-card button {
+  justify-self: start;
+}
+
+.knowledge-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  border-radius: 999px;
+  padding: 0 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .report-list {
   display: grid;
   gap: 10px;
@@ -1336,8 +1506,14 @@ h2 {
   .user-grid,
   .role-grid,
   .split-panels,
-  .finance-grid {
+  .finance-grid,
+  .knowledge-layout,
+  .knowledge-list {
     grid-template-columns: 1fr;
+  }
+
+  .knowledge-summary {
+    position: static;
   }
 
   .metrics-grid {
@@ -1378,8 +1554,13 @@ h2 {
 
   .box-row,
   .entity-row,
-  .details-list div {
+  .details-list div,
+  .knowledge-card-head {
     grid-template-columns: 1fr;
+  }
+
+  .knowledge-card-head {
+    display: grid;
   }
 
   .box-row {

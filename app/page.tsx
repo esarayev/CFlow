@@ -200,7 +200,226 @@ const fallbackData: CflowData = {
   settings: { chinaAddress: defaultChinaAddress },
 };
 
-const navItems = ["Dashboard", "Коробки", "Клиенты", "Склад", "Отправки", "Финансы", "Отчеты", "Настройки"];
+const navItems = ["Dashboard", "Коробки", "Клиенты", "Склад", "Отправки", "Финансы", "Отчеты", "База знаний", "Настройки"];
+
+type KnowledgeItem = {
+  id: string;
+  category: string;
+  title: string;
+  subtitle: string;
+  details: string[];
+  copyText?: string;
+  badge?: string;
+};
+
+const knowledgeCategories = [
+  "Все",
+  "Склады",
+  "Контакты",
+  "Обмен денег",
+  "Оборудование",
+  "Памятки",
+];
+
+const knowledgeItems: KnowledgeItem[] = [
+  {
+    id: "china-main-warehouse",
+    category: "Склады",
+    title: "Склад в Китае",
+    subtitle: "Основной адрес для клиентов Zabota Cargo",
+    badge: "Китай",
+    details: [
+      "Адрес: 浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞",
+      "Постоянная часть кода: 奇瑞QR 18911759229",
+      "Уникальный хвост кода генерируется автоматически: AST A001, AST A002 ... AST B001.",
+    ],
+    copyText: "浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞",
+  },
+  {
+    id: "ala-turdieva",
+    category: "Склады",
+    title: "ALA International",
+    subtitle: "Склад прибытия в Алматы",
+    badge: "Алматы",
+    details: [
+      "Адрес: Турдиева, 134/3.",
+      "График: 09:00-17:30.",
+      "Оплата: USD наличными; тенге через MIG +5 тг; Kaspi QR через MIG +5 тг и 2%.",
+      "Бесплатное хранение: 2 дня после прибытия.",
+    ],
+  },
+  {
+    id: "pervomayka",
+    category: "Склады",
+    title: "Первомайка склад",
+    subtitle: "Промзона, ворота 008",
+    badge: "Склад",
+    details: [
+      "Адрес: Первомайская промзона 742Н, ворота 008.",
+      "График: 09:00-17:00 ежедневно; пятница перерыв 12:00-14:30.",
+      "Оплата: только наличные USD; при оплате тенге +5 тг к курсу.",
+      "Хранение: 2 дня бесплатно, потом малое место 500 тг/день, паллет 2000 тг/день.",
+      "WhatsApp склада: +7 708 111 2826.",
+    ],
+    copyText: "+77081112826",
+  },
+  {
+    id: "mambetova-wholesale",
+    category: "Склады",
+    title: "Оптовый склад Мамбетова",
+    subtitle: "Ближе к центру Алматы, быстрее, но дороже",
+    badge: "Опт",
+    details: [
+      "Адрес: улица Мамбетова, 1/48, Алматы.",
+      "График: 09:00-17:30, обед 13:00-14:00.",
+      "Клиентский сервис: +7 747 375 0808.",
+      "Кладовщики: +7 747 376 0808, +7 702 136 0909.",
+      "Стоимость на опт зависит от плотности, просчитывать отдельно.",
+    ],
+  },
+  {
+    id: "money-orda",
+    category: "Обмен денег",
+    title: "Orda",
+    subtitle: "Обмен от 100 юаней",
+    badge: "100 CNY",
+    details: [
+      "Контакт: Orda.",
+      "Telegram: @ahenmmrzabek.",
+      "Телефон: +7 708 123 8069.",
+      "Использовать как справочный контакт, условия перепроверять перед переводом.",
+    ],
+    copyText: "+77081238069",
+  },
+  {
+    id: "money-aidana",
+    category: "Обмен денег",
+    title: "Юани Айдана",
+    subtitle: "Обмен от 1000 юаней",
+    badge: "1000 CNY",
+    details: [
+      "Контакт: Юани Айдана.",
+      "Телефон: +7 775 145 3947.",
+      "Использовать как справочный контакт, условия перепроверять перед переводом.",
+    ],
+    copyText: "+77751453947",
+  },
+  {
+    id: "remote-payment",
+    category: "Контакты",
+    title: "Гульданай Ala International",
+    subtitle: "Удаленная оплата по складу Алматы",
+    badge: "Оплата",
+    details: [
+      "Телефон: +7 778 182 2564.",
+      "Писать менеджеру, если нужна удаленная оплата на складе Алматы.",
+      "При оплате через Kaspi QR проверять комментарий и сумму перед отправкой.",
+    ],
+    copyText: "+77781822564",
+  },
+  {
+    id: "astana-carrier",
+    category: "Контакты",
+    title: "Груз Алматы-Астана",
+    subtitle: "SP Logistics Astana",
+    badge: "Перевозка",
+    details: [
+      "Телефон: +7 776 707 0738.",
+      "По пятницам указан рабочий интервал 08:00-13:00.",
+      "Использовать для перевозки Алматы-Астана и уточнения условий по текущей партии.",
+    ],
+    copyText: "+77767070738",
+  },
+  {
+    id: "lawyer-irina",
+    category: "Контакты",
+    title: "Юрист Ирина Щербина",
+    subtitle: "Юридический контакт",
+    badge: "Юрист",
+    details: ["Телефон: +7 705 746 4076.", "Держать как справочный контакт для юридических вопросов."],
+    copyText: "+77057464076",
+  },
+  {
+    id: "accounting-ludmila",
+    category: "Контакты",
+    title: "Людмила Профи Бух",
+    subtitle: "Бухгалтерия",
+    badge: "Бухгалтер",
+    details: ["Телефон: +7 708 767 7494.", "Контакт для бухгалтерских вопросов и консультаций."],
+    copyText: "+77087677494",
+  },
+  {
+    id: "site-dulat",
+    category: "Контакты",
+    title: "Дулат Сайт",
+    subtitle: "Сайт и технические вопросы",
+    badge: "Сайт",
+    details: ["Телефон: +7 707 443 2113.", "Контакт по разработке или поддержке сайта."],
+    copyText: "+77074432113",
+  },
+  {
+    id: "scales",
+    category: "Оборудование",
+    title: "Весы до 200 кг",
+    subtitle: "Платформенные весы с отдельной платформой",
+    badge: "Приемка",
+    details: [
+      "Искать: весы 200 кг.",
+      "Лучше брать платформенные весы, чтобы коробки и паллеты не перекрывали экран.",
+      "Проверить питание, точность и удобство калибровки перед покупкой.",
+    ],
+  },
+  {
+    id: "scanner",
+    category: "Оборудование",
+    title: "Сканер штрихкодов",
+    subtitle: "Беспроводной сканер для приемки",
+    badge: "QR/трек",
+    details: [
+      "Искать: Winson 684p сканер или аналогичный беспроводной сканер.",
+      "Важно: стабильная работа с QR и треками, USB-приемник, быстрый ввод без драйверов.",
+      "Проверить дальность и заряд, если оператор ходит по складу.",
+    ],
+  },
+  {
+    id: "arrival-template",
+    category: "Памятки",
+    title: "Шаблон прибытия груза",
+    subtitle: "Что проверять при уведомлении от склада",
+    badge: "Операции",
+    details: [
+      "Сверить код партии, количество мест, вес, объем и сумму.",
+      "Проверить адрес выдачи, график, способ оплаты и срок бесплатного хранения.",
+      "После оплаты зафиксировать расходы в финансах и статус партии.",
+    ],
+    copyText: "Проверить: код партии, мест, вес, объем, сумма, адрес, график, способ оплаты, бесплатное хранение.",
+  },
+  {
+    id: "cost-structure",
+    category: "Памятки",
+    title: "Себестоимость доставки",
+    subtitle: "Что учитывать в цене за килограмм",
+    badge: "Финансы",
+    details: [
+      "Упаковка и вес упаковки.",
+      "Перегруз, доставка Алматы-Астана, доставка по Астане и грузчики.",
+      "Перевозка Китай-Алматы.",
+      "Дополнительные расходы: аренда, техника, расходники и пакеты.",
+    ],
+  },
+  {
+    id: "secure-access",
+    category: "Памятки",
+    title: "Доступы и пароли",
+    subtitle: "Не хранить открытым текстом в базе знаний",
+    badge: "Безопасность",
+    details: [
+      "Логины и пароли от внешних сервисов не показываем в общем справочнике.",
+      "Позже лучше сделать отдельное защищенное хранилище доступов только для руководителя.",
+      "В журнале действий фиксировать, кто смотрел или менял важные реквизиты.",
+    ],
+  },
+];
 
 function canSeeFinance(user: SessionUser) {
   return user.permissions.includes("all") || user.permissions.includes("finance");
@@ -763,6 +982,7 @@ export default function Home() {
     Отправки: { title: "Отправки", lead: "Контейнеры, машины, авиа и состав партий." },
     Финансы: { title: "Финансы", lead: "Оплаты, долги, ожидаемые суммы и доход." },
     Отчеты: { title: "Отчеты", lead: "Срезы по работе точки, сотрудникам, грузам и деньгам." },
+    "База знаний": { title: "База знаний", lead: "Склады, контрагенты, обмен денег, оборудование и рабочие памятки для карго." },
     Настройки: { title: "Настройки", lead: "Сервисные параметры приложения и информация о хранении данных." },
   };
 
@@ -932,6 +1152,10 @@ export default function Home() {
         ) : activeNav === "Отчеты" && showFinance ? (
           <section className="single-page">
             <ReportsPanel data={data} finances={data.finances} />
+          </section>
+        ) : activeNav === "База знаний" ? (
+          <section className="single-page">
+            <KnowledgeBasePanel onCopyText={copyText} />
           </section>
         ) : activeNav === "Настройки" ? (
           <section className="single-page">
@@ -1212,6 +1436,118 @@ function ReportsPanel({ data, finances }: { data: CflowData; finances: FinanceDa
         <div><strong>Ожидаемая прибыль</strong><span>{money(finances.profitToday || 0)}</span></div>
         <div><strong>Отправок создано</strong><span>{data.shipments.length}</span></div>
         <div><strong>Проблемных коробок</strong><span>{data.boxes.filter(isProblem).length}</span></div>
+      </div>
+    </article>
+  );
+}
+
+function KnowledgeBasePanel({ onCopyText }: { onCopyText: (text: string, success: string) => void }) {
+  const [activeCategory, setActiveCategory] = useState("Все");
+  const [knowledgeQuery, setKnowledgeQuery] = useState("");
+
+  const filteredItems = useMemo(() => {
+    const normalizedQuery = knowledgeQuery.trim().toLowerCase();
+
+    return knowledgeItems.filter((item) => {
+      const categoryMatches = activeCategory === "Все" || item.category === activeCategory;
+      const haystack = [
+        item.category,
+        item.title,
+        item.subtitle,
+        item.badge || "",
+        ...item.details,
+      ].join(" ").toLowerCase();
+
+      return categoryMatches && (!normalizedQuery || haystack.includes(normalizedQuery));
+    });
+  }, [activeCategory, knowledgeQuery]);
+
+  const categoryCounts = knowledgeCategories.reduce<Record<string, number>>((acc, category) => {
+    acc[category] = category === "Все"
+      ? knowledgeItems.length
+      : knowledgeItems.filter((item) => item.category === category).length;
+    return acc;
+  }, {});
+
+  return (
+    <article className="panel knowledge-panel">
+      <div className="panel-head compact knowledge-head">
+        <div>
+          <span className="eyebrow">Справочник</span>
+          <h2>Операционная база знаний</h2>
+          <p className="lead">Быстрый доступ к складам, контактам, обмену денег, оборудованию и рабочим правилам.</p>
+        </div>
+        <label className="knowledge-search">
+          <span>Поиск</span>
+          <input
+            value={knowledgeQuery}
+            onChange={(event) => setKnowledgeQuery(event.target.value)}
+            placeholder="Склад, телефон, обмен, весы..."
+          />
+        </label>
+      </div>
+
+      <div className="knowledge-tabs" role="tablist" aria-label="Разделы базы знаний">
+        {knowledgeCategories.map((category) => (
+          <button
+            key={category}
+            type="button"
+            className={activeCategory === category ? "active" : ""}
+            onClick={() => setActiveCategory(category)}
+          >
+            <span>{category}</span>
+            <strong>{categoryCounts[category]}</strong>
+          </button>
+        ))}
+      </div>
+
+      <div className="knowledge-layout">
+        <aside className="knowledge-summary">
+          <h3>Что уже внесено</h3>
+          <div>
+            <span>Склады</span>
+            <strong>{categoryCounts["Склады"]}</strong>
+          </div>
+          <div>
+            <span>Контакты</span>
+            <strong>{categoryCounts["Контакты"]}</strong>
+          </div>
+          <div>
+            <span>Обмен денег</span>
+            <strong>{categoryCounts["Обмен денег"]}</strong>
+          </div>
+          <div>
+            <span>Оборудование</span>
+            <strong>{categoryCounts["Оборудование"]}</strong>
+          </div>
+          <p>Это пока ручная база. Следующим шагом можно сделать редактирование прямо из интерфейса и хранить записи в общей базе.</p>
+        </aside>
+
+        <div className="knowledge-list">
+          {filteredItems.map((item) => (
+            <section className="knowledge-card" key={item.id}>
+              <div className="knowledge-card-head">
+                <div>
+                  <span className="eyebrow">{item.category}</span>
+                  <h3>{item.title}</h3>
+                  <p>{item.subtitle}</p>
+                </div>
+                {item.badge ? <span className="knowledge-badge">{item.badge}</span> : null}
+              </div>
+              <ul>
+                {item.details.map((detail) => (
+                  <li key={detail}>{detail}</li>
+                ))}
+              </ul>
+              {item.copyText ? (
+                <button type="button" onClick={() => onCopyText(item.copyText || "", "Данные скопированы")}>
+                  Скопировать
+                </button>
+              ) : null}
+            </section>
+          ))}
+          {!filteredItems.length ? <p className="empty-state">По этому запросу ничего не найдено.</p> : null}
+        </div>
       </div>
     </article>
   );

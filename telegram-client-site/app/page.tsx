@@ -35,6 +35,7 @@ const stageLabels: Record<CargoStage, { icon: string; title: string; text: strin
 
 const emptyProfile: ClientProfile = { registered: false, approved: false, client: null, boxes: [] };
 const profileCacheKey = "cflow-client-profile-v2";
+const brandLogo = "/zabota-cargo-logo.png";
 
 function clientName(user?: TelegramUser) {
   return [user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.username || "";
@@ -128,7 +129,7 @@ export default function ClientMiniApp() {
           setError(data.error || "Не удалось загрузить кабинет");
         }
       })
-      .catch(() => setError("Не удалось подключиться к CFlow"))
+      .catch(() => setError("Не удалось подключиться к сервису"))
       .finally(() => {
         setHasCheckedProfile(true);
         setIsLoading(false);
@@ -253,11 +254,7 @@ function RegistrationScreen({
 }) {
   return (
     <section className="neu-registration slide-up">
-      <div className="neu-logo-block">
-        <div className="neu-logo float">🚚</div>
-        <strong>CFlow Cargo</strong>
-        <span>Доставка из Китая в Казахстан</span>
-      </div>
+      <BrandLogoBlock subtitle="Доставка товаров из Китая в Казахстан" />
 
       <form className="neu-card neu-form" onSubmit={onSubmit}>
         <div className="neu-section-title">
@@ -286,8 +283,8 @@ function PendingScreen({ name, phone, notice, error, isLoading }: { name: string
   return (
     <section className="neu-pending slide-up">
       <div className="neu-mini-head">
-        <div className="neu-mini-icon">🚚</div>
-        <div><span>CFlow Cargo</span><strong>Привет, {name.split(" ")[0] || "клиент"}!</strong></div>
+        <BrandMark />
+        <div><span>ZABOTA CARGO</span><strong>Привет, {name.split(" ")[0] || "клиент"}!</strong></div>
       </div>
       <article className="neu-card pending-card">
         <div className="neu-logo wait float">⏳</div>
@@ -313,11 +310,28 @@ function Header({ activeTab, name, latestStage }: { activeTab: AppTab; name: str
   return (
     <header className="neu-header">
       <div className="neu-mini-head">
-        <div className="neu-mini-icon">🚚</div>
-        <div><span>CFlow Cargo</span><strong>{name.split(" ")[0] || "Клиент"}</strong></div>
+        <BrandMark />
+        <div><span>ZABOTA CARGO</span><strong>{name.split(" ")[0] || "Клиент"}</strong></div>
       </div>
-      <div className="neu-header-pill">{activeTab === "code" ? "📋 Мой код" : `📦 ${latestStage}`}</div>
+      <div className="neu-header-pill">{activeTab === "code" ? "Мой код" : latestStage}</div>
     </header>
+  );
+}
+
+function BrandLogoBlock({ subtitle }: { subtitle: string }) {
+  return (
+    <div className="neu-logo-block">
+      <img className="zabota-logo-full" src={brandLogo} alt="ZABOTA CARGO" />
+      <span>{subtitle}</span>
+    </div>
+  );
+}
+
+function BrandMark() {
+  return (
+    <div className="zabota-mark" aria-hidden="true">
+      <img src={brandLogo} alt="" />
+    </div>
   );
 }
 

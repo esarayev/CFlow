@@ -566,3 +566,339 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 @media (min-width: 431px) {
   .client-app { border-inline: 1px solid rgba(184,197,214,.45); }
 }
+
+/* Zabota Cargo client mini app */
+:root {
+  --z-bg: #F8F6F3;
+  --z-card: #FCFBF9;
+  --z-bg-alt: #F1EEE9;
+  --z-border: #E9E3DA;
+  --z-border-strong: #E1D9CF;
+  --z-ink: #343434;
+  --z-text: #727272;
+  --z-muted: #A8A8A8;
+  --z-accent: #D8AA42;
+  --z-accent-light: #E6C26A;
+  --z-accent-dark: #A97A3F;
+  --z-accent-soft: #FFF7E1;
+}
+
+.client-app {
+  background:
+    radial-gradient(circle at 86% -10%, rgba(216, 170, 66, .16), transparent 34%),
+    linear-gradient(180deg, var(--z-bg) 0%, #F4F0EA 100%);
+  color: var(--z-text);
+  font-family: "Nunito", "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.neu-app.confirmed {
+  padding-bottom: calc(76px + env(safe-area-inset-bottom));
+}
+
+.neu-scroll {
+  padding: 16px 16px 30px;
+}
+
+.neu-registration,
+.neu-pending {
+  background:
+    radial-gradient(circle at 90% -8%, rgba(216, 170, 66, .18), transparent 34%),
+    var(--z-bg);
+  padding: 34px 16px 30px;
+}
+
+.neu-card {
+  border: 1px solid var(--z-border);
+  border-radius: 20px;
+  background: rgba(252, 251, 249, .96);
+  box-shadow: 0 10px 30px rgba(52, 52, 52, .045);
+}
+
+.neu-logo-block {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin: 0 0 24px;
+  text-align: left;
+}
+
+.zabota-logo-full {
+  display: block;
+  width: min(88vw, 360px);
+  max-height: 160px;
+  object-fit: contain;
+  object-position: left center;
+  background: transparent;
+}
+
+.neu-logo-block span,
+.neu-mini-head span,
+.neu-label,
+.neu-count {
+  color: var(--z-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .11em;
+}
+
+.neu-form {
+  gap: 16px;
+  padding: 22px 20px;
+  margin-bottom: 14px;
+}
+
+.neu-section-title h1,
+.pending-card h1 {
+  color: var(--z-ink);
+  font-size: 22px;
+}
+
+.neu-section-title p,
+.pending-card p,
+.neu-hint p,
+.neu-next p,
+.empty-shipments span {
+  color: var(--z-text);
+}
+
+.neu-form label span {
+  color: var(--z-muted);
+}
+
+.neu-form input,
+.client-form input,
+.client-form textarea {
+  border: 1.5px solid var(--z-border);
+  border-radius: 14px;
+  background: var(--z-bg-alt);
+  box-shadow: none;
+  color: var(--z-ink);
+}
+
+.neu-form input::placeholder {
+  color: var(--z-muted);
+}
+
+.neu-form input:focus {
+  border-color: var(--z-accent);
+  background: var(--z-accent-soft);
+}
+
+.neu-accent,
+.primary {
+  border-radius: 15px;
+  background: linear-gradient(135deg, var(--z-accent-light), var(--z-accent), var(--z-accent-dark));
+  box-shadow: 0 8px 24px rgba(169, 122, 63, .24);
+  color: #fff;
+}
+
+.neu-hint,
+.neu-toast.inline,
+.neu-error {
+  border: 1px solid rgba(216, 170, 66, .22);
+  background: var(--z-accent-soft);
+  box-shadow: none;
+}
+
+.neu-toast.inline {
+  color: var(--z-accent-dark);
+}
+
+.neu-mini-head {
+  gap: 12px;
+}
+
+.zabota-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 118px;
+  height: 44px;
+  overflow: visible;
+  border-radius: 12px;
+  background: rgba(252, 251, 249, .9);
+  border: 1px solid var(--z-border);
+  padding: 4px 6px;
+}
+
+.zabota-mark img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center;
+  background: transparent;
+}
+
+.neu-mini-head strong {
+  color: var(--z-ink);
+}
+
+.pending-card {
+  padding: 34px 22px;
+  margin: 28px 0 16px;
+}
+
+.neu-logo.wait,
+.neu-logo.small {
+  background: var(--z-accent-soft);
+  border: 1px solid rgba(216, 170, 66, .3);
+  box-shadow: none;
+}
+
+.neu-pill {
+  background: var(--z-bg-alt);
+  box-shadow: none;
+  color: var(--warning);
+}
+
+.neu-pill.success {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+.neu-next {
+  padding: 20px;
+}
+
+.neu-next b {
+  background: var(--z-accent-soft);
+  box-shadow: none;
+  color: var(--z-accent-dark);
+}
+
+.neu-header {
+  padding: 22px 16px 14px;
+  background: rgba(252, 251, 249, .94);
+  border-bottom: 1px solid var(--z-border);
+}
+
+.neu-header-pill {
+  background: var(--z-accent-soft);
+  box-shadow: none;
+  color: var(--z-accent-dark);
+  border: 1px solid rgba(216, 170, 66, .28);
+}
+
+.client-badge {
+  grid-template-columns: 52px minmax(0, 1fr);
+  padding: 18px;
+}
+
+.neu-mini-icon,
+.neu-mini-icon.large {
+  background: var(--z-bg-alt);
+  box-shadow: none;
+}
+
+.neu-filter {
+  background: var(--z-card);
+  border: 1px solid var(--z-border);
+  box-shadow: none;
+}
+
+.neu-filter button {
+  color: var(--z-text);
+}
+
+.neu-filter button.active {
+  background: linear-gradient(135deg, var(--z-accent-light), var(--z-accent-dark));
+  box-shadow: 0 4px 14px rgba(169, 122, 63, .16);
+}
+
+.neu-card small {
+  color: var(--z-muted);
+}
+
+.neu-code,
+.neu-address {
+  background: var(--z-bg-alt);
+  box-shadow: none;
+  border: 1px solid var(--z-border);
+  color: var(--z-ink);
+}
+
+.neu-copy-line {
+  border: 1px solid rgba(216, 170, 66, .25);
+  background: var(--z-accent-soft);
+  box-shadow: none;
+  color: var(--z-accent-dark);
+}
+
+.neu-card:not(.pending-card):not(.client-badge):not(.shipment-card):not(.empty-shipments) {
+  padding: 20px;
+}
+
+.shipment-card {
+  padding: 17px 18px;
+}
+
+.shipment-top strong,
+.neu-route strong,
+.client-badge strong,
+.empty-shipments strong {
+  color: var(--z-ink);
+}
+
+.shipment-top span,
+.shipment-meta span,
+.neu-route span {
+  color: var(--z-muted);
+}
+
+.shipment-status,
+.shipment-meta span {
+  background: var(--z-bg-alt);
+  box-shadow: none;
+  color: var(--z-accent-dark);
+}
+
+.neu-progress {
+  background: var(--z-bg-alt);
+  box-shadow: none;
+}
+
+.neu-progress i {
+  background: linear-gradient(90deg, var(--z-accent-light), var(--z-accent-dark));
+  box-shadow: 0 0 8px rgba(216, 170, 66, .35);
+}
+
+.neu-route {
+  border-top-color: var(--z-border);
+}
+
+.neu-route b {
+  background: var(--z-bg-alt);
+  box-shadow: none;
+}
+
+.empty-shipments {
+  padding: 42px 22px;
+}
+
+.neu-bottom-nav {
+  width: min(100vw, 430px);
+  border-top: 1px solid var(--z-border);
+  background: rgba(252, 251, 249, .96);
+  box-shadow: 0 -8px 26px rgba(52, 52, 52, .06);
+}
+
+.neu-bottom-nav button {
+  color: var(--z-muted);
+}
+
+.neu-bottom-nav button.active {
+  color: var(--z-accent-dark);
+}
+
+@media (max-width: 360px) {
+  .zabota-logo-full {
+    width: min(90vw, 320px);
+    max-height: 132px;
+  }
+
+  .neu-filter button {
+    font-size: 12px;
+  }
+}

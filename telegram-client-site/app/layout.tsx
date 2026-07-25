@@ -3,8 +3,8 @@ import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CFlow",
-  description: "Клиентский кабинет CFlow в Telegram",
+  title: "ZABOTA CARGO",
+  description: "Клиентский кабинет ZABOTA CARGO в Telegram",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

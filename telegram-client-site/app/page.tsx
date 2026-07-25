@@ -286,6 +286,7 @@ export default function ClientMiniApp() {
           <CodeScreen
             client={client}
             onCopy={copyAddress}
+            onCopyName={() => copyText(client?.name || "", "Имя получателя скопировано")}
             onCopyCode={() => copyText(client?.code || "", "Код клиента скопирован")}
             onCopyAddress={() => copyText(client?.chinaAddress || "", "Адрес склада скопирован")}
           />
@@ -399,34 +400,96 @@ function BrandMark() {
 function CodeScreen({
   client,
   onCopy,
+  onCopyName,
   onCopyCode,
   onCopyAddress,
 }: {
   client: ClientProfile["client"];
   onCopy: () => void;
+  onCopyName: () => void;
   onCopyCode: () => void;
   onCopyAddress: () => void;
 }) {
   return (
-    <section className="neu-stack slide-up">
-      <article className="neu-card client-badge">
-        <div className="neu-mini-icon large">👤</div>
-        <div><strong>{client?.name || "Клиент"}</strong><span className="neu-pill success"><i />Подтвержден</span></div>
+    <section className="address-screen slide-up">
+      <div className="address-title-block">
+        <span>Ваш адрес в Китае</span>
+        <h1>Данные для заказа</h1>
+      </div>
+      <div className="address-route-pill">
+        <span>✈</span>
+        <strong>Китай → Казахстан</strong>
+      </div>
+      <article className="address-client-row">
+        <div>
+          <span>Получатель</span>
+          <strong>{client?.name || "Клиент"}</strong>
+        </div>
+        <button type="button" disabled={!client?.name} onClick={onCopyName} aria-label="Скопировать имя клиента">
+          <CopyIcon />
+        </button>
       </article>
-      <article className="neu-card">
-        <div className="neu-label">Ваш код клиента</div>
-        <div className="neu-code">{client?.code || "Код еще не выдан"}</div>
-        <button className="neu-copy-line" type="button" disabled={!client?.code} onClick={onCopyCode}>📋 Скопировать код</button>
-        <small>🔒 Персональный — только для вас</small>
+      <article className="address-fields-card">
+        <CopyInfoRow
+          label="Код клиента"
+          value={client?.code || "Код еще не выдан"}
+          helper="Обязательно укажите вместе с адресом склада."
+          disabled={!client?.code}
+          onCopy={onCopyCode}
+        />
+        <CopyInfoRow
+          label="Адрес склада в Китае"
+          value={client?.chinaAddress || "Адрес появится после подтверждения регистрации"}
+          helper="Укажите как адрес доставки на китайском маркетплейсе."
+          disabled={!client?.chinaAddress}
+          onCopy={onCopyAddress}
+        />
       </article>
-      <article className="neu-card">
-        <div className="neu-label">Адрес склада в Китае</div>
-        <div className="neu-address">{client?.chinaAddress || "Адрес появится после подтверждения регистрации"}</div>
-        <button className="neu-copy-line" type="button" disabled={!client?.chinaAddress} onClick={onCopyAddress}>📋 Скопировать адрес</button>
-      </article>
-      <button className="neu-accent copy" type="button" disabled={!client?.code || !client?.chinaAddress} onClick={onCopy}>📋 Скопировать код и адрес</button>
-      <div className="neu-hint"><span>💡</span><p>При заказе в Китае вставьте код в поле получателя. По нему склад поймет, что посылка ваша.</p></div>
+      <button className="address-copy-all" type="button" disabled={!client?.code || !client?.chinaAddress} onClick={onCopy}>
+        <CopyIcon />
+        <span>Скопировать всё</span>
+      </button>
+      <div className="address-tip">
+        <strong>Важно</strong>
+        <p>Склад определяет владельца посылки по коду клиента. Если указать только адрес, товар может попасть в нераспознанные.</p>
+      </div>
     </section>
+  );
+}
+
+function CopyInfoRow({
+  label,
+  value,
+  helper,
+  disabled,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  disabled: boolean;
+  onCopy: () => void;
+}) {
+  return (
+    <div className="copy-info-row">
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+        <small>{helper}</small>
+      </div>
+      <button type="button" disabled={disabled} onClick={onCopy} aria-label={`Скопировать: ${label}`}>
+        <CopyIcon />
+      </button>
+    </div>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="8" y="8" width="11" height="11" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
+    </svg>
   );
 }
 

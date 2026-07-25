@@ -87,12 +87,13 @@ const memorySettings = new Map<string, string>();
 const memoryDeletedBoxes = new Map<string, CflowTombstone>();
 const memoryDeletedClients = new Map<string, CflowTombstone>();
 
-const CLIENT_CODE_STATIC_PREFIX = "奇瑞QR 18911759229";
+const CLIENT_CODE_STATIC_PREFIX = "奇瑞QR";
+const CLIENT_CODE_LEGACY_STATIC_PREFIX = "奇瑞QR 18911759229";
 const CLIENT_CODE_CITY_PREFIX = "AST";
 const CLIENT_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const CLIENT_CODE_MAX_NUMBER = 999;
 const CLIENT_CODE_CAPACITY = CLIENT_CODE_ALPHABET.length * CLIENT_CODE_MAX_NUMBER;
-const DEFAULT_CHINA_ADDRESS = "浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞";
+const DEFAULT_CHINA_ADDRESS = "18911759229 浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞";
 let ensureTablesPromise: Promise<void> | null = null;
 
 function json(data: unknown, init: ResponseInit = {}) {
@@ -141,6 +142,12 @@ function fullClientCodeFromIndex(index: number) {
   return suffix ? `${CLIENT_CODE_STATIC_PREFIX} ${suffix}` : "";
 }
 
+function normalizeGeneratedClientCode(value: unknown) {
+  const code = String(value || "").trim().replace(/\s+/g, " ");
+  if (!code) return "";
+  return code.replace(new RegExp(`^${CLIENT_CODE_LEGACY_STATIC_PREFIX}\\s+`, "i"), `${CLIENT_CODE_STATIC_PREFIX} `);
+}
+
 function nowIso() {
   return new Date().toISOString();
 }
@@ -175,7 +182,7 @@ function normalizeBoxPayload(input: Record<string, unknown>, existing?: CflowBox
     ...input,
     id,
     clientId: String(input.clientId || existingPayload.clientId || existing?.client_id || "").trim(),
-    clientCode: String(input.clientCode || existingPayload.clientCode || existing?.client_code || "").trim(),
+    clientCode: normalizeGeneratedClientCode(input.clientCode || existingPayload.clientCode || existing?.client_code || ""),
     phone: String(input.phone || existingPayload.phone || existing?.phone || "").trim(),
     telegramId: String(input.telegramId || existingPayload.telegramId || existing?.telegram_id || "").trim(),
     track: String(input.track || existingPayload.track || existing?.track || "").trim(),
@@ -204,7 +211,7 @@ function toDesktopBox(box: CflowBox) {
   return parsePayload<Record<string, unknown>>(box.payload, {
     id: box.id,
     clientId: box.client_id,
-    clientCode: box.client_code,
+    clientCode: normalizeGeneratedClientCode(box.client_code),
     phone: box.phone,
     telegramId: box.telegram_id,
     track: box.track,
@@ -381,7 +388,7 @@ function publicClient(client: CflowClient | null, boxes: unknown[] = []) {
       name: client.name,
       phone: client.phone,
       status: client.registration_status,
-      code: client.client_code,
+      code: normalizeGeneratedClientCode(client.client_code),
       chinaAddress: client.china_address,
     } : null,
     boxes,
@@ -396,7 +403,7 @@ function toDesktopClient(client: CflowClient) {
     telegram: client.telegram_username,
     telegramId: client.telegram_id,
     comments: client.comments,
-    clientCode: client.client_code,
+    clientCode: normalizeGeneratedClientCode(client.client_code),
     chinaAddress: client.china_address,
     clientRate: client.client_rate,
     chinaRate: client.china_rate,
@@ -420,7 +427,7 @@ function fromInput(input: Record<string, unknown>, existing?: CflowClient | null
     telegram_username: String(input.telegram || input.telegramUsername || existing?.telegram_username || "").trim(),
     telegram_id: String(input.telegramId || existing?.telegram_id || "").trim(),
     comments: String(input.comments || input.comment || existing?.comments || "").trim(),
-    client_code: String(input.clientCode || input.code || existing?.client_code || "").trim(),
+    client_code: normalizeGeneratedClientCode(input.clientCode || input.code || existing?.client_code || ""),
     china_address: String(input.chinaAddress || existing?.china_address || "").trim(),
     client_rate: toNumber(input.clientRate || existing?.client_rate),
     china_rate: toNumber(input.chinaRate || existing?.china_rate),
@@ -435,7 +442,7 @@ async function findClient(env: Env, query: { id?: string; telegramId?: string; p
   await ensureTables(env.DB);
   const telegramId = normalizeId(query.telegramId);
   const phone = normalizeId(query.phone);
-  const clientCode = normalizeId(query.clientCode);
+  const clientCode = normalizeGeneratedClientCode(normalizeId(query.clientCode));
   const id = normalizeId(query.id);
   const name = normalizeId(query.name).toLowerCase();
 
@@ -507,7 +514,7 @@ async function upsertClient(env: Env, input: Record<string, unknown>) {
     id: String(input.id || ""),
     telegramId: String(input.telegramId || ""),
     phone: String(input.phone || ""),
-    clientCode: String(input.clientCode || input.code || ""),
+    clientCode: normalizeGeneratedClientCode(input.clientCode || input.code || ""),
     name: String(input.name || input.fullName || ""),
   });
   const client = fromInput(input, existing);
@@ -718,7 +725,7 @@ function toDesktopClientCode(item: CflowClientCode) {
 
 function fromDesktopClientCode(input: Record<string, unknown>, count = 0): CflowClientCode {
   const now = nowIso();
-  const code = String(input.code || input.clientCode || "").trim();
+  const code = normalizeGeneratedClientCode(input.code || input.clientCode || "");
   const clientId = String(input.clientId || "").trim();
   const status = String(input.status || (clientId ? "assigned" : "available")) === "assigned" ? "assigned" : "available";
   return {
@@ -739,10 +746,20 @@ async function upsertClientCode(env: Env, input: Record<string, unknown>, count 
   if (!item.code) throw new Error("Код клиента пустой");
   memoryClientCodes.set(item.code.toLowerCase(), item);
   if (!env.DB) return item;
+  const existingById = await env.DB.prepare("SELECT id FROM client_codes WHERE id = ?").bind(item.id).first<{ id: string }>();
+  if (existingById) {
+    await env.DB.prepare(`
+      UPDATE client_codes
+      SET code = ?, status = ?, client_id = ?, client_name = ?, assigned_at = ?, updated_at = ?
+      WHERE id = ?
+    `).bind(item.code, item.status, item.client_id, item.client_name, item.assigned_at, item.updated_at, item.id).run();
+    return item;
+  }
   await env.DB.prepare(`
     INSERT INTO client_codes (id, code, status, client_id, client_name, assigned_at, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(code) DO UPDATE SET
+      id = excluded.id,
       status = excluded.status,
       client_id = excluded.client_id,
       client_name = excluded.client_name,
@@ -789,10 +806,10 @@ async function generateAndReserveClientCode(env: Env, client: CflowClient) {
   const codeRows = await listClientCodes(env);
   const used = new Set<string>();
   clients.forEach((item) => {
-    if (item.client_code) used.add(item.client_code.toLowerCase());
+    if (item.client_code) used.add(normalizeGeneratedClientCode(item.client_code).toLowerCase());
   });
   codeRows.forEach((item) => {
-    if (item.status === "assigned" || item.client_id) used.add(item.code.toLowerCase());
+    if (item.status === "assigned" || item.client_id) used.add(normalizeGeneratedClientCode(item.code).toLowerCase());
   });
 
   const assignedAt = nowIso();

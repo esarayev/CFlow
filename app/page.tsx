@@ -165,7 +165,7 @@ type ActionFormState = {
 
 const clientCodeCapacity = 26 * 999;
 const generatedCodePattern = /AST\s+[A-Z]\d{3}$/i;
-const defaultChinaAddress = "浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞";
+const defaultChinaAddress = "18911759229 浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞";
 
 declare global {
   interface Window {
@@ -235,11 +235,11 @@ const knowledgeItems: KnowledgeItem[] = [
     subtitle: "Основной адрес для клиентов Zabota Cargo",
     badge: "Китай",
     details: [
-      "Адрес: 浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞",
-      "Постоянная часть кода: 奇瑞QR 18911759229",
+      "Адрес: 18911759229 浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞",
+      "Постоянная часть кода: 奇瑞QR",
       "Уникальный хвост кода генерируется автоматически: AST A001, AST A002 ... AST B001.",
     ],
-    copyText: "浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞",
+    copyText: "18911759229 浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞",
   },
   {
     id: "ala-turdieva",
@@ -959,7 +959,8 @@ export default function Home() {
       </div>
       {dashboardPanel === "codes" ? (
         <div className="dashboard-admin-form">
-          <p>Постоянная часть склада: 奇瑞QR 18911759229</p>
+          <p>Постоянная часть кода: 奇瑞QR</p>
+          <p>Телефон/часть адреса склада: 18911759229</p>
           <p>Уникальная часть выдается автоматически: AST A001, AST A002 ... AST A999, затем AST B001.</p>
           <p>Следующий код закрепляется за клиентом навсегда и больше не используется повторно.</p>
           <button className="primary" type="button" disabled>Автогенерация включена</button>

@@ -5,12 +5,13 @@ const { execFileSync } = require("node:child_process");
 const crypto = require("node:crypto");
 const { validateSession } = require("./users-store.cjs");
 
-const CLIENT_CODE_STATIC_PREFIX = "奇瑞QR 18911759229";
+const CLIENT_CODE_STATIC_PREFIX = "奇瑞QR";
+const CLIENT_CODE_LEGACY_STATIC_PREFIX = "奇瑞QR 18911759229";
 const CLIENT_CODE_CITY_PREFIX = "AST";
 const CLIENT_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const CLIENT_CODE_MAX_NUMBER = 999;
 const CLIENT_CODE_CAPACITY = CLIENT_CODE_ALPHABET.length * CLIENT_CODE_MAX_NUMBER;
-const DEFAULT_CHINA_ADDRESS = "浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞";
+const DEFAULT_CHINA_ADDRESS = "18911759229 浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞";
 
 function dataDir(app) {
   return path.join(app.getPath("appData"), "CFlow");
@@ -93,8 +94,14 @@ function fullClientCodeFromIndex(index) {
   return suffix ? `${CLIENT_CODE_STATIC_PREFIX} ${suffix}` : "";
 }
 
+function normalizeGeneratedClientCode(value) {
+  const code = String(value || "").trim().replace(/\s+/g, " ");
+  if (!code) return "";
+  return code.replace(new RegExp(`^${CLIENT_CODE_LEGACY_STATIC_PREFIX}\\s+`, "i"), `${CLIENT_CODE_STATIC_PREFIX} `);
+}
+
 function generatedCodeIndex(value) {
-  const match = String(value || "").trim().match(/AST\s+([A-Z])(\d{3})$/i);
+  const match = normalizeGeneratedClientCode(value).match(/AST\s+([A-Z])(\d{3})$/i);
   if (!match) return -1;
   const letterIndex = CLIENT_CODE_ALPHABET.indexOf(match[1].toUpperCase());
   const number = Number(match[2]);
@@ -105,10 +112,10 @@ function generatedCodeIndex(value) {
 function generateNextClientCode(data) {
   const used = new Set();
   (data.clients || []).forEach((client) => {
-    if (client.clientCode) used.add(String(client.clientCode).toLowerCase());
+    if (client.clientCode) used.add(normalizeGeneratedClientCode(client.clientCode).toLowerCase());
   });
   (data.clientCodes || []).forEach((item) => {
-    if (item.status === "assigned" || item.clientId) used.add(String(item.code || "").toLowerCase());
+    if (item.status === "assigned" || item.clientId) used.add(normalizeGeneratedClientCode(item.code).toLowerCase());
   });
 
   for (let index = 0; index < CLIENT_CODE_CAPACITY; index += 1) {
@@ -220,7 +227,7 @@ function normalizeCloudClient(client) {
     telegram: String(client.telegram || client.telegramUsername || "").trim(),
     telegramId: String(client.telegramId || "").trim(),
     comments: String(client.comments || client.comment || "").trim(),
-    clientCode: String(client.clientCode || client.code || "").trim(),
+    clientCode: normalizeGeneratedClientCode(client.clientCode || client.code || ""),
     chinaAddress: String(client.chinaAddress || "").trim(),
     clientRate: toNumber(client.clientRate || client.tariff),
     chinaRate: toNumber(client.chinaRate),
@@ -297,7 +304,7 @@ function normalizeClientCode(value) {
 
 function normalizeClientCodeItem(input, count = 0) {
   const now = nowIso();
-  const code = normalizeClientCode(input?.code || input?.clientCode || input);
+  const code = normalizeGeneratedClientCode(normalizeClientCode(input?.code || input?.clientCode || input));
   const clientId = String(input?.clientId || "").trim();
   const status = String(input?.status || (clientId ? "assigned" : "available")).trim();
   return {
@@ -621,7 +628,7 @@ function upsertClient(data, input) {
     existing.telegram = String(input.telegram || existing.telegram || "").trim();
     existing.telegramId = String(input.telegramId || existing.telegramId || "").trim();
     existing.comments = String(input.comments || input.comment || existing.comments || "").trim();
-    existing.clientCode = String(input.clientCode || existing.clientCode || "").trim();
+    existing.clientCode = normalizeGeneratedClientCode(input.clientCode || existing.clientCode || "");
     existing.chinaAddress = String(input.chinaAddress || existing.chinaAddress || "").trim();
     existing.clientRate = toNumber(input.clientRate) || existing.clientRate || 0;
     existing.chinaRate = toNumber(input.chinaRate) || existing.chinaRate || 0;
@@ -638,7 +645,7 @@ function upsertClient(data, input) {
     telegram: String(input.telegram || "").trim(),
     telegramId: String(input.telegramId || "").trim(),
     comments: String(input.comments || input.comment || "").trim(),
-    clientCode: String(input.clientCode || "").trim(),
+    clientCode: normalizeGeneratedClientCode(input.clientCode || ""),
     chinaAddress: String(input.chinaAddress || "").trim(),
     clientRate: toNumber(input.clientRate),
     chinaRate: toNumber(input.chinaRate),
@@ -655,7 +662,7 @@ function receiveBox(app, input) {
   const data = readStore(app);
   const track = String(input.track || "").trim();
   const code = String(input.code || "").trim();
-  const inputClientCode = String(input.clientCode || "").trim();
+  const inputClientCode = normalizeGeneratedClientCode(input.clientCode || "");
   const matchedClient = inputClientCode
     ? data.clients.find((client) => String(client.clientCode || "").toLowerCase() === inputClientCode.toLowerCase())
     : null;

@@ -280,6 +280,219 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   font-weight: 700;
   margin-top: 10px;
 }
+.neu-section-title.compact {
+  gap: 5px;
+  margin-bottom: 14px;
+}
+.neu-section-title.compact h1 {
+  font-size: 20px;
+  line-height: 1.15;
+}
+.address-screen {
+  display: grid;
+  gap: 14px;
+  padding: 2px 0 18px;
+}
+.address-title-block {
+  display: grid;
+  gap: 4px;
+}
+.address-title-block span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+.address-title-block h1 {
+  color: var(--ink);
+  font-size: 24px;
+  line-height: 1.1;
+}
+.address-route-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 52px;
+  border-radius: 14px;
+  background: rgba(216, 170, 66, .1);
+  border: 1px solid rgba(216, 170, 66, .22);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 900;
+}
+.address-route-pill span {
+  font-size: 20px;
+}
+.address-client-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px;
+  gap: 12px;
+  align-items: stretch;
+}
+.address-client-row > div {
+  min-width: 0;
+  border-radius: 14px;
+  background: var(--neu-bg);
+  box-shadow: inset 4px 4px 10px var(--neu-dark), inset -4px -4px 10px var(--neu-light);
+  padding: 13px 16px;
+}
+.address-client-row span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 5px;
+}
+.address-client-row strong {
+  display: block;
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.address-client-row button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 14px;
+  background: var(--neu-bg);
+  box-shadow: 5px 5px 10px var(--neu-dark), -4px -4px 8px var(--neu-light);
+  color: var(--accent);
+}
+.address-client-row svg,
+.address-copy-all svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.address-fields-card {
+  display: grid;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(17, 24, 39, .08);
+  overflow: hidden;
+}
+.address-fields-card .copy-info-row {
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+  padding: 16px;
+}
+.address-fields-card .copy-info-row + .copy-info-row {
+  border-top: 1px solid rgba(17, 24, 39, .08);
+}
+.address-copy-all {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 58px;
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  background: #080b12;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 900;
+  box-shadow: 0 14px 28px rgba(8, 11, 18, .18);
+}
+.address-copy-all:disabled {
+  opacity: .45;
+}
+.address-tip {
+  display: grid;
+  gap: 6px;
+  border-radius: 14px;
+  background: var(--neu-bg);
+  box-shadow: inset 4px 4px 10px var(--neu-dark), inset -4px -4px 10px var(--neu-light);
+  padding: 15px;
+}
+.address-tip strong {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.address-tip p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.copy-details-card {
+  display: grid;
+  gap: 14px;
+}
+.copy-details-list {
+  display: grid;
+  gap: 10px;
+}
+.copy-info-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  gap: 10px;
+  align-items: center;
+  border-radius: 14px;
+  background: var(--neu-bg);
+  box-shadow: inset 4px 4px 10px var(--neu-dark), inset -4px -4px 10px var(--neu-light);
+  padding: 13px;
+}
+.copy-info-row > div {
+  min-width: 0;
+}
+.copy-info-row span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+.copy-info-row strong {
+  display: block;
+  color: var(--ink);
+  font-family: "JetBrains Mono", "Fira Mono", monospace;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+  word-break: break-word;
+}
+.copy-info-row small {
+  margin-top: 7px;
+}
+.copy-info-row button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--accent);
+  color: #fff;
+  box-shadow: 5px 5px 10px var(--neu-dark), -4px -4px 8px var(--neu-light);
+}
+.copy-info-row button:disabled {
+  opacity: .45;
+}
+.copy-info-row button:active:not(:disabled) {
+  transform: scale(.97);
+}
+.copy-info-row svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .neu-code, .neu-address {
   border-radius: 12px;
   background: var(--neu-bg);
@@ -930,6 +1143,80 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   box-shadow: none;
   border: 1px solid var(--z-border);
   color: var(--z-ink);
+}
+
+.address-title-block span,
+.address-tip p,
+.address-client-row span {
+  color: var(--z-muted);
+}
+
+.address-title-block h1,
+.address-client-row strong {
+  color: var(--z-ink);
+}
+
+.address-route-pill {
+  background: rgba(216, 170, 66, .11);
+  border-color: rgba(216, 170, 66, .24);
+  color: var(--z-accent-dark);
+}
+
+.address-client-row > div,
+.address-tip {
+  background: var(--z-bg-alt);
+  box-shadow: none;
+  border: 1px solid var(--z-border);
+}
+
+.address-client-row button {
+  background: var(--z-bg-alt);
+  box-shadow: none;
+  border: 1px solid var(--z-border);
+  color: var(--z-accent-dark);
+}
+
+.address-fields-card {
+  background: var(--z-card);
+  border-color: var(--z-border);
+}
+
+.address-fields-card .copy-info-row {
+  background: var(--z-card);
+}
+
+.address-fields-card .copy-info-row + .copy-info-row {
+  border-top-color: var(--z-border);
+}
+
+.address-copy-all {
+  background: var(--z-ink);
+  box-shadow: 0 14px 26px rgba(41, 28, 22, .18);
+}
+
+.address-tip strong {
+  color: var(--z-accent-dark);
+}
+
+.copy-info-row {
+  background: var(--z-bg-alt);
+  box-shadow: none;
+  border: 1px solid var(--z-border);
+}
+
+.copy-info-row span,
+.copy-info-row small {
+  color: var(--z-muted);
+}
+
+.copy-info-row strong {
+  color: var(--z-ink);
+}
+
+.copy-info-row button {
+  background: linear-gradient(135deg, var(--z-accent-light), var(--z-accent-dark));
+  box-shadow: 0 8px 18px rgba(169, 122, 63, .18);
+  color: #fff;
 }
 
 .neu-copy-line {

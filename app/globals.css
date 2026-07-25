@@ -2,16 +2,16 @@
 
 :root {
   color-scheme: light;
-  --background: #f5f6f8;
-  --foreground: #111827;
-  --muted: #667085;
-  --line: #e4e7ec;
-  --line-strong: #d0d5dd;
+  --background: #f8f6f3;
+  --foreground: #343434;
+  --muted: #727272;
+  --line: #e9e3da;
+  --line-strong: #ded5ca;
   --panel: #ffffff;
-  --panel-soft: #f8fafc;
-  --accent: #3C538B;
-  --accent-hover: #314573;
-  --accent-soft: #eef3fa;
+  --panel-soft: #fcfbf9;
+  --accent: #a97a3f;
+  --accent-hover: #7f572f;
+  --accent-soft: #fff7e1;
   --success: #16865a;
   --success-soft: #eaf8f1;
   --danger: #c24135;
@@ -68,7 +68,7 @@ button:hover {
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 3px solid rgba(60, 83, 139, 0.22);
+  outline: 3px solid rgba(216, 170, 66, 0.28);
   outline-offset: 2px;
 }
 
@@ -145,7 +145,7 @@ h2 {
   height: 100vh;
   padding: 26px 20px;
   border-right: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(252, 251, 249, 0.92);
   backdrop-filter: blur(18px);
 }
 

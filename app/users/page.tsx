@@ -159,9 +159,9 @@ export default function UsersApp() {
       <main className="auth-shell">
         <section className="auth-panel users-auth" aria-label="Вход в CFlow Пользователи">
           <div className="brand auth-brand">
-            <img className="brand-logo brand-logo-auth" src="./cflow-logo-tight.png" alt="CFlow" />
+            <img className="brand-logo brand-logo-auth" src="./zabota-cargo-logo.png" alt="ZABOTA CARGO" />
             <div>
-              <strong>CFlow Пользователи</strong>
+              <strong>ZABOTA CARGO Пользователи</strong>
               <span>управление сотрудниками и ролями</span>
             </div>
           </div>
@@ -193,9 +193,9 @@ export default function UsersApp() {
     <main className="users-admin-shell">
       <section className="users-admin-head">
         <div className="brand">
-          <img className="brand-logo" src="./cflow-logo-tight.png" alt="CFlow" />
+          <img className="brand-logo" src="./zabota-cargo-logo.png" alt="ZABOTA CARGO" />
           <div>
-            <strong>CFlow Пользователи</strong>
+            <strong>ZABOTA CARGO Пользователи</strong>
             <span>сотрудники, роли и доступы</span>
           </div>
         </div>

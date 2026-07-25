@@ -993,9 +993,9 @@ export default function Home() {
       <main className="auth-shell">
         <section className="auth-panel" aria-label="Вход в CFlow">
           <div className="brand auth-brand">
-            <img className="brand-logo brand-logo-auth" src="./cflow-logo-tight.png" alt="CFlow" />
+            <img className="brand-logo brand-logo-auth" src="./zabota-cargo-logo.png" alt="ZABOTA CARGO" />
             <div>
-              <strong>CFlow</strong>
+              <strong>ZABOTA CARGO</strong>
               <span>рабочий кабинет карго-точки</span>
             </div>
           </div>
@@ -1027,9 +1027,9 @@ export default function Home() {
     <main className="shell">
       <aside className="sidebar" aria-label="Основная навигация">
         <div className="brand sidebar-brand">
-          <img className="brand-logo" src="./cflow-logo-tight.png" alt="CFlow" />
+          <img className="brand-logo" src="./zabota-cargo-logo.png" alt="ZABOTA CARGO" />
           <div>
-            <strong>CFlow</strong>
+            <strong>ZABOTA CARGO</strong>
             <span>{sessionUser.role}</span>
           </div>
         </div>

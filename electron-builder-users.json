@@ -1,7 +1,7 @@
 {
-  "appId": "kz.cflow.users",
-  "productName": "CFlow Пользователи",
-  "copyright": "Copyright © 2026 CFlow",
+  "appId": "kz.zabota-cargo.users",
+  "productName": "Zabota Cargo Пользователи",
+  "copyright": "Copyright © 2026 Zabota Cargo",
   "directories": {
     "output": "release-users"
   },
@@ -12,7 +12,7 @@
     "package.json"
   ],
   "extraMetadata": {
-    "name": "cflow-users",
+    "name": "zabota-cargo-users",
     "main": "electron/users-main.cjs"
   },
   "win": {
@@ -24,6 +24,6 @@
     "perMachine": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "CFlow Пользователи"
+    "shortcutName": "Zabota Cargo Пользователи"
   }
 }

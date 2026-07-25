@@ -22,9 +22,9 @@ function createWindow() {
     height: 780,
     minWidth: 980,
     minHeight: 680,
-    title: "CFlow Пользователи",
+    title: "Zabota Cargo Пользователи",
     autoHideMenuBar: true,
-    backgroundColor: "#f7f8fb",
+    backgroundColor: "#f8f6f3",
     icon: path.join(app.getAppPath(), "assets", "icon.ico"),
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),

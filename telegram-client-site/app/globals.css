@@ -637,6 +637,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   color: #fff;
   font-weight: 800;
 }
+.danger-action {
+  min-height: 46px;
+  border: 1px solid rgba(194, 65, 53, .28);
+  border-radius: 14px;
+  background: #fff4f2;
+  color: #b42318;
+  font-weight: 800;
+}
+.danger-action:disabled {
+  opacity: .55;
+}
 .empty-state {
   display: grid;
   gap: 5px;

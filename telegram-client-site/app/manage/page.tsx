@@ -321,6 +321,35 @@ export default function ManageMiniApp() {
       .finally(() => setIsLoading(false));
   }
 
+  function deleteSelectedClient() {
+    if (!selectedClient) return;
+    if (!window.confirm(`Удалить клиента "${selectedClient.name}"? Это действие нельзя отменить.`)) return;
+    setIsLoading(true);
+    fetch("/api/manage/clients/delete", {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        initData,
+        clientId: selectedClient.id,
+      }),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!data.ok) {
+          setError(data.error || "Клиент не удален.");
+          return;
+        }
+        const deletedId = data.deletedClientId || selectedClient.id;
+        setClients((current) => current.filter((client) => client.id !== deletedId));
+        if (data.data?.clientCodes) setClientCodes(data.data.clientCodes);
+        setSelectedId("");
+        setNotice(`Клиент ${selectedClient.name} удален.`);
+        setError("");
+      })
+      .catch(() => setError("Не удалось удалить клиента."))
+      .finally(() => setIsLoading(false));
+  }
+
   return (
     <main className="client-app manage-app">
       <header className="client-shell-head">
@@ -409,6 +438,9 @@ export default function ManageMiniApp() {
                 {selectedClient.clientCode ? "Код уже выдан" : "Выдать код"}
               </button>
               <button type="submit" disabled={isLoading}>Сохранить комментарий</button>
+              <button className="danger-action" type="button" disabled={isLoading} onClick={deleteSelectedClient}>
+                Удалить клиента
+              </button>
             </form>
           ) : null}
         </section> : (

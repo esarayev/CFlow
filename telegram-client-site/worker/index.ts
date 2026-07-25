@@ -500,6 +500,40 @@ async function listClients(env: Env) {
   return result.results || [];
 }
 
+async function deleteClient(env: Env, id: string) {
+  await ensureTables(env.DB);
+  const cleanId = normalizeId(id);
+  if (!cleanId) throw new Error("Клиент не найден");
+  const client = await findClient(env, { id: cleanId });
+  if (!client) throw new Error("Клиент не найден");
+
+  const boxes = await getBoxes(env, client);
+  if (boxes.length) throw new Error("У клиента есть коробки. Сначала разберите связанные грузы в desktop-приложении.");
+
+  memoryClients.delete(cleanId);
+  for (const [key, code] of memoryClientCodes.entries()) {
+    if (code.client_id === cleanId) {
+      memoryClientCodes.set(key, {
+        ...code,
+        status: "available",
+        client_id: "",
+        client_name: "",
+        assigned_at: "",
+        updated_at: nowIso(),
+      });
+    }
+  }
+  if (!env.DB) return client;
+
+  await env.DB.prepare("DELETE FROM clients WHERE id = ?").bind(cleanId).run();
+  await env.DB.prepare(`
+    UPDATE client_codes
+    SET status = 'available', client_id = '', client_name = '', assigned_at = '', updated_at = ?
+    WHERE client_id = ?
+  `).bind(nowIso(), cleanId).run();
+  return client;
+}
+
 async function findBox(env: Env, id: string) {
   await ensureTables(env.DB);
   const cleanId = normalizeId(id);
@@ -1187,6 +1221,18 @@ async function handleManageApproveClient(request: Request, env: Env, ctx: Execut
   return json({ ok: true, client: toDesktopClient(client) });
 }
 
+async function handleManageDeleteClient(request: Request, env: Env) {
+  const body = await request.json() as { initData?: string; clientId?: string };
+  const verified = await verifyManageInitData(body.initData || "", env);
+  if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
+  try {
+    const deleted = await deleteClient(env, String(body.clientId || ""));
+    return json({ ok: true, deletedClientId: deleted.id, data: await cloudSnapshot(env) });
+  } catch (error) {
+    return json({ ok: false, error: error instanceof Error ? error.message : "Клиент не удален" }, { status: 400 });
+  }
+}
+
 async function handleManageBroadcast(request: Request, env: Env) {
   const body = await request.json() as {
     initData?: string;
@@ -1296,6 +1342,7 @@ const worker = {
     if (url.pathname === "/api/manage/clients" && request.method === "GET") return handleManageClients(request, env);
     if (url.pathname === "/api/manage/clients/issue-code" && request.method === "POST") return handleManageIssueClientCode(request, env, ctx);
     if (url.pathname === "/api/manage/clients/approve" && request.method === "POST") return handleManageApproveClient(request, env, ctx);
+    if (url.pathname === "/api/manage/clients/delete" && request.method === "POST") return handleManageDeleteClient(request, env);
     if (url.pathname === "/api/manage/broadcast" && request.method === "POST") return handleManageBroadcast(request, env);
     if (url.pathname === "/api/telegram/configure" && request.method === "POST") return handleConfigure(request, env);
     if (url.pathname === "/api/telegram/client-webhook" && request.method === "POST") return handleClientTelegramWebhook(request, env);

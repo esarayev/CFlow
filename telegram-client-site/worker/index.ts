@@ -69,6 +69,14 @@ type CflowTombstone = {
   deleted_at: string;
 };
 
+type TelegramUpdate = {
+  message?: {
+    chat?: { id?: number | string };
+    text?: string;
+    from?: { id?: number | string; username?: string; first_name?: string; last_name?: string };
+  };
+};
+
 const memoryClients = new Map<string, CflowClient>();
 const memoryBoxes = new Map<string, CflowBox>();
 const memoryShipments = new Map<string, CflowStoredEntity>();
@@ -868,6 +876,89 @@ function requireAdmin(request: Request, env: Env) {
   return Boolean(env.CFLOW_ADMIN_TOKEN && auth === `Bearer ${env.CFLOW_ADMIN_TOKEN}`);
 }
 
+function clientWebAppUrl(request: Request, env: Env) {
+  return env.CFLOW_TELEGRAM_WEBAPP_URL || `${new URL(request.url).origin}/`;
+}
+
+function telegramReplyKeyboard(webAppUrl: string) {
+  return {
+    inline_keyboard: [[
+      { text: "Открыть кабинет ZABOTA CARGO", web_app: { url: webAppUrl } },
+    ]],
+  };
+}
+
+function escapeHtml(value: unknown) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function telegramApi(env: Env, method: string, payload: Record<string, unknown>) {
+  if (!env.CFLOW_TELEGRAM_BOT_TOKEN) return { ok: false, skipped: true, error: "Бот не настроен" };
+  const response = await fetch(`https://api.telegram.org/bot${env.CFLOW_TELEGRAM_BOT_TOKEN}/${method}`, {
+    method: "POST",
+    headers: { "content-type": "application/json; charset=utf-8" },
+    body: JSON.stringify(payload),
+  });
+  return await response.json() as Record<string, unknown>;
+}
+
+async function sendClientLaunchMessage(env: Env, chatId: string | number, webAppUrl: string) {
+  return await telegramApi(env, "sendMessage", {
+    chat_id: chatId,
+    text: [
+      "Добро пожаловать в ZABOTA CARGO.",
+      "",
+      "Нажмите кнопку ниже, чтобы открыть личный кабинет, пройти регистрацию, получить код клиента и смотреть статусы посылок.",
+    ].join("\n"),
+    reply_markup: telegramReplyKeyboard(webAppUrl),
+  });
+}
+
+async function notifyClientApproved(env: Env, request: Request, client: CflowClient) {
+  if (!client.telegram_id || !client.client_code || !client.china_address) return { ok: false, skipped: true };
+  return await telegramApi(env, "sendMessage", {
+    chat_id: client.telegram_id,
+    parse_mode: "HTML",
+    text: [
+      "✅ Ваша регистрация подтверждена.",
+      "",
+      "Код клиента:",
+      `<code>${escapeHtml(client.client_code)}</code>`,
+      "",
+      "Адрес склада в Китае:",
+      `<code>${escapeHtml(client.china_address)}</code>`,
+      "",
+      "Откройте кабинет, чтобы скопировать код и адрес отдельно и отслеживать статусы посылок.",
+    ].join("\n"),
+    reply_markup: telegramReplyKeyboard(clientWebAppUrl(request, env)),
+  });
+}
+
+function shouldNotifyApproval(before: CflowClient | null, after: CflowClient) {
+  if (!after.telegram_id || !after.client_code || !after.china_address || after.registration_status !== "approved") return false;
+  if (!before) return true;
+  return before.registration_status !== "approved" || before.client_code !== after.client_code || before.china_address !== after.china_address;
+}
+
+async function handleClientTelegramWebhook(request: Request, env: Env) {
+  if (env.CFLOW_ADMIN_TOKEN) {
+    const secret = request.headers.get("x-telegram-bot-api-secret-token") || "";
+    if (secret !== env.CFLOW_ADMIN_TOKEN) return json({ ok: false, error: "Неверный webhook secret" }, { status: 403 });
+  }
+  const update = await request.json() as TelegramUpdate;
+  const chatId = update.message?.chat?.id;
+  const text = String(update.message?.text || "").trim().toLowerCase();
+  if (!chatId) return json({ ok: true, skipped: true });
+  if (!text || text.startsWith("/start")) {
+    await sendClientLaunchMessage(env, chatId, clientWebAppUrl(request, env));
+  }
+  return json({ ok: true });
+}
+
 async function handleMe(request: Request, env: Env) {
   const initData = new URL(request.url).searchParams.get("initData") || "";
   const verified = await verifyTelegramInitData(initData, env.CFLOW_TELEGRAM_BOT_TOKEN);
@@ -901,11 +992,19 @@ async function handleAdminClients(request: Request, env: Env) {
   return json({ ok: true, clients: clients.map(toDesktopClient) });
 }
 
-async function handleAdminUpsertClient(request: Request, env: Env) {
+async function handleAdminUpsertClient(request: Request, env: Env, ctx: ExecutionContext) {
   if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
   try {
     const body = await request.json() as Record<string, unknown>;
+    const before = await findClient(env, {
+      id: String(body.id || ""),
+      telegramId: String(body.telegramId || ""),
+      phone: String(body.phone || ""),
+      clientCode: String(body.clientCode || body.code || ""),
+      name: String(body.name || body.fullName || ""),
+    });
     const client = await upsertClient(env, { ...body, registrationSource: body.registrationSource || "manual", registrationStatus: body.registrationStatus || "approved" });
+    if (shouldNotifyApproval(before, client)) ctx.waitUntil(notifyClientApproved(env, request, client));
     return json({ ok: true, client: toDesktopClient(client) });
   } catch (error) {
     return json({ ok: false, error: error instanceof Error ? error.message : "Клиент не сохранен" }, { status: 400 });
@@ -984,19 +1083,21 @@ async function handleManageClients(request: Request, env: Env) {
   return json({ ok: true, clients: clients.map(toDesktopClient), clientCodes: clientCodes.map(toDesktopClientCode), settings: await getSettings(env) });
 }
 
-async function handleManageIssueClientCode(request: Request, env: Env) {
+async function handleManageIssueClientCode(request: Request, env: Env, ctx: ExecutionContext) {
   const body = await request.json() as { initData?: string; clientId?: string; telegramId?: string };
   const verified = await verifyManageInitData(body.initData || "", env);
   if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
   try {
+    const before = await findClient(env, { id: String(body.clientId || ""), telegramId: String(body.telegramId || "") });
     const client = await issueCodeToClient(env, { id: body.clientId, telegramId: body.telegramId });
+    if (shouldNotifyApproval(before, client)) ctx.waitUntil(notifyClientApproved(env, request, client));
     return json({ ok: true, client: toDesktopClient(client), data: await cloudSnapshot(env) });
   } catch (error) {
     return json({ ok: false, error: error instanceof Error ? error.message : "Код не выдан" }, { status: 400 });
   }
 }
 
-async function handleManageApproveClient(request: Request, env: Env) {
+async function handleManageApproveClient(request: Request, env: Env, ctx: ExecutionContext) {
   const body = await request.json() as { initData?: string; clientId?: string; telegramId?: string; clientCode?: string; chinaAddress?: string; comments?: string };
   const verified = await verifyManageInitData(body.initData || "", env);
   if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
@@ -1009,10 +1110,11 @@ async function handleManageApproveClient(request: Request, env: Env) {
     comments: body.comments || existing.comments,
     registrationStatus: existing.registration_status,
   });
+  if (shouldNotifyApproval(existing, client)) ctx.waitUntil(notifyClientApproved(env, request, client));
   return json({ ok: true, client: toDesktopClient(client) });
 }
 
-async function handleApprove(request: Request, env: Env) {
+async function handleApprove(request: Request, env: Env, ctx: ExecutionContext) {
   if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
   const body = await request.json() as { telegramId?: string; clientCode?: string; chinaAddress?: string };
   const existing = await findClient(env, { telegramId: String(body.telegramId || "") });
@@ -1023,6 +1125,7 @@ async function handleApprove(request: Request, env: Env) {
     chinaAddress: body.chinaAddress || existing.china_address,
     registrationStatus: "approved",
   });
+  if (shouldNotifyApproval(existing, client)) ctx.waitUntil(notifyClientApproved(env, request, client));
   return json({ ok: true, ...publicClient(client, await getBoxes(env, client)) });
 }
 
@@ -1037,9 +1140,18 @@ async function handleConfigure(request: Request, env: Env) {
     const clientResponse = await fetch(`https://api.telegram.org/bot${env.CFLOW_TELEGRAM_BOT_TOKEN}/setChatMenuButton`, {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ menu_button: { type: "web_app", text: "CFlow", web_app: { url: clientWebAppUrl } } }),
+      body: JSON.stringify({ menu_button: { type: "web_app", text: "ZABOTA CARGO", web_app: { url: clientWebAppUrl } } }),
     });
-    results.client = await clientResponse.json();
+    const webhookResponse = await fetch(`https://api.telegram.org/bot${env.CFLOW_TELEGRAM_BOT_TOKEN}/setWebhook`, {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify({
+        url: `${origin}/api/telegram/client-webhook`,
+        secret_token: env.CFLOW_ADMIN_TOKEN || undefined,
+        allowed_updates: ["message"],
+      }),
+    });
+    results.client = { menu: await clientResponse.json(), webhook: await webhookResponse.json() };
   }
 
   if (env.CFLOW_MANAGE_TELEGRAM_BOT_TOKEN) {
@@ -1051,7 +1163,11 @@ async function handleConfigure(request: Request, env: Env) {
     results.manage = await manageResponse.json();
   }
 
-  const ok = Boolean((results.client as { ok?: boolean } | undefined)?.ok || (results.manage as { ok?: boolean } | undefined)?.ok);
+  const ok = Boolean(
+    (results.client as { menu?: { ok?: boolean }; webhook?: { ok?: boolean } } | undefined)?.menu?.ok ||
+    (results.client as { menu?: { ok?: boolean }; webhook?: { ok?: boolean } } | undefined)?.webhook?.ok ||
+    (results.manage as { ok?: boolean } | undefined)?.ok,
+  );
   return json({ ok, clientWebAppUrl, manageWebAppUrl, telegram: results }, { status: ok ? 200 : 502 });
 }
 
@@ -1061,18 +1177,19 @@ const worker = {
     if (url.pathname === "/api/client/me" && request.method === "GET") return handleMe(request, env);
     if (url.pathname === "/api/client/register" && request.method === "POST") return handleRegister(request, env);
     if (url.pathname === "/api/admin/clients" && request.method === "GET") return handleAdminClients(request, env);
-    if (url.pathname === "/api/admin/clients/upsert" && request.method === "POST") return handleAdminUpsertClient(request, env);
+    if (url.pathname === "/api/admin/clients/upsert" && request.method === "POST") return handleAdminUpsertClient(request, env, ctx);
     if (url.pathname === "/api/admin/snapshot" && request.method === "GET") return handleAdminSnapshot(request, env);
     if (url.pathname === "/api/admin/health" && request.method === "GET") return handleAdminHealth(request, env);
     if (url.pathname === "/api/admin/snapshot/sync" && request.method === "POST") return handleAdminSyncSnapshot(request, env);
     if (url.pathname === "/api/admin/boxes/upsert" && request.method === "POST") return handleAdminUpsertBox(request, env);
     if (url.pathname === "/api/admin/boxes/delete" && request.method === "POST") return handleAdminDeleteBox(request, env);
-    if (url.pathname === "/api/admin/telegram-clients/approve" && request.method === "POST") return handleApprove(request, env);
+    if (url.pathname === "/api/admin/telegram-clients/approve" && request.method === "POST") return handleApprove(request, env, ctx);
     if (url.pathname === "/api/manage/me" && request.method === "GET") return handleManageMe(request, env);
     if (url.pathname === "/api/manage/clients" && request.method === "GET") return handleManageClients(request, env);
-    if (url.pathname === "/api/manage/clients/issue-code" && request.method === "POST") return handleManageIssueClientCode(request, env);
-    if (url.pathname === "/api/manage/clients/approve" && request.method === "POST") return handleManageApproveClient(request, env);
+    if (url.pathname === "/api/manage/clients/issue-code" && request.method === "POST") return handleManageIssueClientCode(request, env, ctx);
+    if (url.pathname === "/api/manage/clients/approve" && request.method === "POST") return handleManageApproveClient(request, env, ctx);
     if (url.pathname === "/api/telegram/configure" && request.method === "POST") return handleConfigure(request, env);
+    if (url.pathname === "/api/telegram/client-webhook" && request.method === "POST") return handleClientTelegramWebhook(request, env);
     return handler.fetch(request, env, ctx);
   },
 };

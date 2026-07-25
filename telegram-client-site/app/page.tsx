@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 type TelegramUser = { id?: number; first_name?: string; last_name?: string; username?: string };
 type CargoStage = "china_warehouse" | "in_transit" | "kazakhstan" | "astana";
@@ -36,6 +36,8 @@ const stageLabels: Record<CargoStage, { icon: string; title: string; text: strin
 const emptyProfile: ClientProfile = { registered: false, approved: false, client: null, boxes: [] };
 const profileCacheKey = "cflow-client-profile-v2";
 const brandLogo = "/zabota-cargo-logo.png";
+const profilePollMs = 15000;
+const deploymentPollMs = 60000;
 
 function clientName(user?: TelegramUser) {
   return [user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.username || "";
@@ -58,6 +60,22 @@ function cacheProfile(profile: ClientProfile) {
   window.localStorage.setItem(profileCacheKey, JSON.stringify(profile));
 }
 
+function currentAssetSignature() {
+  if (typeof document === "undefined") return "";
+  const assets = [
+    ...Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][href*="/assets/"]')).map((item) => item.href),
+    ...Array.from(document.querySelectorAll<HTMLScriptElement>('script[src*="/assets/"]')).map((item) => item.src),
+  ];
+  return assets.sort().join("|");
+}
+
+async function fetchLatestAssetSignature() {
+  const response = await fetch(`/?version-check=${Date.now()}`, { cache: "no-store" });
+  const html = await response.text();
+  const matches = [...html.matchAll(/(?:href|src)="([^"]*\/assets\/[^"]+)"/g)].map((match) => new URL(match[1], window.location.origin).href);
+  return matches.sort().join("|");
+}
+
 export default function ClientMiniApp() {
   const [telegramUser, setTelegramUser] = useState<TelegramUser | undefined>();
   const [initData, setInitData] = useState("");
@@ -69,6 +87,28 @@ export default function ClientMiniApp() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [form, setForm] = useState({ fullName: "", whatsappPhone: "" });
+
+  const refreshProfile = useCallback((showLoading = false) => {
+    if (!initData) return;
+    if (showLoading) setIsLoading(true);
+    fetch(`/api/client/me?initData=${encodeURIComponent(initData)}&ts=${Date.now()}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.ok) {
+          const nextProfile = { registered: data.registered, approved: data.approved, client: data.client, boxes: data.boxes || [] };
+          setProfile(nextProfile);
+          cacheProfile(nextProfile);
+          setError("");
+        } else {
+          setError(data.error || "Не удалось загрузить кабинет");
+        }
+      })
+      .catch(() => setError("Не удалось подключиться к сервису"))
+      .finally(() => {
+        setHasCheckedProfile(true);
+        if (showLoading) setIsLoading(false);
+      });
+  }, [initData]);
 
   useEffect(() => {
     const cached = readCachedProfile();
@@ -118,23 +158,44 @@ export default function ClientMiniApp() {
       setIsLoading(false);
       return;
     }
-    fetch(`/api/client/me?initData=${encodeURIComponent(initData)}`)
-      .then((response) => response.json())
-      .then((data) => {
-        if (data.ok) {
-          const nextProfile = { registered: data.registered, approved: data.approved, client: data.client, boxes: data.boxes || [] };
-          setProfile(nextProfile);
-          cacheProfile(nextProfile);
-        } else {
-          setError(data.error || "Не удалось загрузить кабинет");
-        }
-      })
-      .catch(() => setError("Не удалось подключиться к сервису"))
-      .finally(() => {
-        setHasCheckedProfile(true);
-        setIsLoading(false);
-      });
-  }, [initData]);
+    refreshProfile(true);
+  }, [initData, refreshProfile]);
+
+  useEffect(() => {
+    if (!initData) return;
+    const timer = window.setInterval(() => refreshProfile(false), profilePollMs);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshProfile(false);
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [initData, refreshProfile]);
+
+  useEffect(() => {
+    const initialSignature = currentAssetSignature();
+    if (!initialSignature) return;
+    let stopped = false;
+    const checkDeployment = () => {
+      fetchLatestAssetSignature()
+        .then((latestSignature) => {
+          if (!stopped && latestSignature && latestSignature !== initialSignature) window.location.reload();
+        })
+        .catch(() => undefined);
+    };
+    const timer = window.setInterval(checkDeployment, deploymentPollMs);
+    const checkWhenVisible = () => {
+      if (document.visibilityState === "visible") checkDeployment();
+    };
+    document.addEventListener("visibilitychange", checkWhenVisible);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
+    };
+  }, []);
 
   const client = profile.client;
   const latestStage = useMemo(() => {

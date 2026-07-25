@@ -38,7 +38,7 @@ npm run build:cf
 npm run deploy:cf
 ```
 
-5. Set Telegram menu buttons through the deployed URL:
+5. Set Telegram menu buttons and the client bot webhook through the deployed URL:
 
 ```powershell
 Invoke-WebRequest -Method POST -Uri "https://YOUR-WORKER.workers.dev/api/telegram/configure" -Headers @{ Authorization = "Bearer $env:CFLOW_ADMIN_TOKEN" }

@@ -40,7 +40,7 @@ const stageLabels: Record<CargoStage, { icon: string; title: string; text: strin
 };
 
 const emptyProfile: ClientProfile = { registered: false, approved: false, client: null, boxes: [] };
-const profileCacheKey = "cflow-client-profile-v2";
+const profileCacheKey = "cflow-client-profile-v3";
 const brandLogo = "/zabota-cargo-logo.png";
 const profilePollMs = 15000;
 const deploymentPollMs = 60000;
@@ -49,21 +49,26 @@ function clientName(user?: TelegramUser) {
   return [user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.username || "";
 }
 
-function readCachedProfile(): ClientProfile {
+function readCachedProfile(telegramUserId?: string | number): ClientProfile {
   if (typeof window === "undefined") return emptyProfile;
+  const expectedUserId = String(telegramUserId || "");
+  if (!expectedUserId) return emptyProfile;
   try {
     const cached = window.localStorage.getItem(profileCacheKey);
     if (!cached) return emptyProfile;
-    const profile = JSON.parse(cached) as ClientProfile;
+    const profile = JSON.parse(cached) as ClientProfile & { telegramUserId?: string };
+    if (String(profile.telegramUserId || "") !== expectedUserId) return emptyProfile;
     return profile?.registered ? profile : emptyProfile;
   } catch {
     return emptyProfile;
   }
 }
 
-function cacheProfile(profile: ClientProfile) {
+function cacheProfile(profile: ClientProfile, telegramUserId?: string | number) {
   if (typeof window === "undefined" || !profile.registered) return;
-  window.localStorage.setItem(profileCacheKey, JSON.stringify(profile));
+  const userId = String(telegramUserId || "");
+  if (!userId) return;
+  window.localStorage.setItem(profileCacheKey, JSON.stringify({ ...profile, telegramUserId: userId }));
 }
 
 function currentAssetSignature() {
@@ -105,18 +110,24 @@ export default function ClientMiniApp() {
           const nextProfile = { registered: data.registered, approved: data.approved, client: data.client, boxes: data.boxes || [] };
           setProfile(nextProfile);
           setClaim(data.claim || null);
-          cacheProfile(nextProfile);
+          cacheProfile(nextProfile, telegramUser?.id);
           setError("");
         } else {
+          setProfile(emptyProfile);
+          setClaim(null);
           setError(data.error || "Не удалось загрузить кабинет");
         }
       })
-      .catch(() => setError("Не удалось подключиться к сервису"))
+      .catch(() => {
+        setProfile(emptyProfile);
+        setClaim(null);
+        setError("Не удалось подключиться к сервису");
+      })
       .finally(() => {
         setHasCheckedProfile(true);
         if (showLoading) setIsLoading(false);
       });
-  }, [initData]);
+  }, [initData, telegramUser?.id]);
 
   const refreshClaim = useCallback(() => {
     if (!initData) return;
@@ -133,12 +144,12 @@ export default function ClientMiniApp() {
   }, [initData]);
 
   useEffect(() => {
-    const cached = readCachedProfile();
+    const cached = readCachedProfile(telegramUser?.id);
     if (cached.registered) {
       setProfile(cached);
       setHasCheckedProfile(true);
     }
-  }, []);
+  }, [telegramUser?.id]);
 
   useEffect(() => {
     let isMounted = true;

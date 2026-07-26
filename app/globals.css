@@ -810,6 +810,23 @@ h2 {
   font-weight: 650;
 }
 
+.code-owner {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+}
+
+.code-owner strong {
+  color: var(--foreground);
+  font-weight: 800;
+}
+
+.code-owner small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .detail-actions {
   flex-wrap: wrap;
   margin-top: 18px;

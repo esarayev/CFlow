@@ -508,6 +508,23 @@ function isWaitingIssue(box: BoxItem) {
   return box.status === "Ждет выдачи";
 }
 
+function findClientByCode(clients: ClientItem[], clientCode?: string) {
+  const normalizedCode = String(clientCode || "").trim().toLowerCase();
+  if (!normalizedCode) return undefined;
+  return clients.find((client) => String(client.clientCode || "").trim().toLowerCase() === normalizedCode);
+}
+
+function clientCodeInfo(clientCode: string | undefined, owner?: ClientItem) {
+  const code = clientCode || "Не указан";
+  const ownerName = owner?.name || "владелец не найден";
+  return (
+    <span className="code-owner">
+      <strong>{code}</strong>
+      <small>закреплен за: {ownerName}</small>
+    </span>
+  );
+}
+
 export default function Home() {
   const searchRef = useRef<HTMLInputElement>(null);
   const trackRef = useRef<HTMLInputElement>(null);
@@ -641,6 +658,8 @@ export default function Home() {
       item.boxId === modalBox.id || item.text.includes(modalBox.id) || item.text.includes(modalBox.track) || Boolean(modalBox.code && item.text.includes(modalBox.code)),
     );
   }, [data.activity, modalBox]);
+  const selectedBoxCodeOwner = selectedBox ? findClientByCode(data.clients, selectedBox.clientCode) : undefined;
+  const modalBoxCodeOwner = modalBox ? findClientByCode(data.clients, modalBox.clientCode) : undefined;
   const assignedCodeCount = useMemo(() => {
     const assigned = new Set<string>();
     data.clients.forEach((client) => {
@@ -1084,7 +1103,7 @@ export default function Home() {
         <div><dt>ID</dt><dd>{selectedBox.id}</dd></div>
         <div><dt>Трек</dt><dd>{selectedBox.track}</dd></div>
         <div><dt>Код коробки</dt><dd>{selectedBox.code || "Не указан"}</dd></div>
-        <div><dt>Код клиента</dt><dd>{selectedBox.clientCode || "Не указан"}</dd></div>
+        <div><dt>Код клиента</dt><dd>{clientCodeInfo(selectedBox.clientCode, selectedBoxCodeOwner)}</dd></div>
         <div><dt>Партия</dt><dd>{selectedBox.batch || "Не указана"}</dd></div>
         <div><dt>Телефон</dt><dd>{selectedBox.phone}</dd></div>
         <div><dt>Вес</dt><dd>{selectedBox.weight}</dd></div>
@@ -1300,6 +1319,7 @@ export default function Home() {
           <DetailModal
             box={modalBox}
             client={modalClient}
+            boxCodeOwner={modalBoxCodeOwner}
             clientBoxes={modalClientBoxes}
             boxActivity={modalBoxActivity}
             showFinance={showFinance}
@@ -1817,6 +1837,7 @@ function SettingsPanel() {
 function DetailModal({
   box,
   client,
+  boxCodeOwner,
   clientBoxes,
   boxActivity,
   showFinance,
@@ -1831,6 +1852,7 @@ function DetailModal({
 }: {
   box?: BoxItem;
   client?: ClientItem;
+  boxCodeOwner?: ClientItem;
   clientBoxes: BoxItem[];
   boxActivity: ActivityItem[];
   showFinance: boolean;
@@ -1872,7 +1894,7 @@ function DetailModal({
             <dl className="details-list modal-list">
               <div><dt>Клиент</dt><dd>{box.client}</dd></div>
               <div><dt>Код коробки</dt><dd>{box.code || "Не указан"}</dd></div>
-              <div><dt>Код клиента</dt><dd>{box.clientCode || "Не указан"}</dd></div>
+              <div><dt>Код клиента</dt><dd>{clientCodeInfo(box.clientCode, boxCodeOwner)}</dd></div>
               <div><dt>Партия</dt><dd>{box.batch || "Не указана"}</dd></div>
               <div><dt>Телефон</dt><dd>{box.phone || "Не указан"}</dd></div>
               <div><dt>Место</dt><dd>{box.place}</dd></div>

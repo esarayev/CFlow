@@ -91,6 +91,25 @@ async function fetchLatestAssetSignature() {
   return matches.sort().join("|");
 }
 
+async function fetchJson<T>(url: string, options: RequestInit = {}) {
+  let response: Response;
+  try {
+    response = await fetch(url, options);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error || "network");
+    throw new Error(`Сеть: ${message}`);
+  }
+  const text = await response.text();
+  let data: T & { ok?: boolean; error?: string };
+  try {
+    data = JSON.parse(text) as T & { ok?: boolean; error?: string };
+  } catch {
+    throw new Error(`Ответ не JSON: HTTP ${response.status}`);
+  }
+  if (!response.ok && !data.error) throw new Error(`HTTP ${response.status}`);
+  return data;
+}
+
 export default function ClientMiniApp() {
   const [telegramUser, setTelegramUser] = useState<TelegramUser | undefined>();
   const [initData, setInitData] = useState("");
@@ -107,13 +126,12 @@ export default function ClientMiniApp() {
   const refreshProfile = useCallback((showLoading = false) => {
     if (!initData) return;
     if (showLoading) setIsLoading(true);
-    fetch(`/api/client/me?ts=${Date.now()}`, {
+    fetchJson<{ ok: boolean; registered: boolean; approved: boolean; client: ClientProfile["client"]; boxes: ClientBox[]; claim: ClientClaim | null; error?: string }>(`/api/client/me?ts=${Date.now()}`, {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
       body: JSON.stringify({ initData }),
       cache: "no-store",
     })
-      .then((response) => response.json())
       .then((data) => {
         if (data.ok) {
           const nextProfile = { registered: data.registered, approved: data.approved, client: data.client, boxes: data.boxes || [] };
@@ -125,8 +143,9 @@ export default function ClientMiniApp() {
           setError(data.error || "Не удалось загрузить кабинет");
         }
       })
-      .catch(() => {
-        setError("Не удалось подключиться к сервису");
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error || "");
+        setError(`Не удалось подключиться к сервису: ${message}`);
       })
       .finally(() => {
         setHasCheckedProfile(true);
@@ -136,13 +155,12 @@ export default function ClientMiniApp() {
 
   const refreshClaim = useCallback(() => {
     if (!initData) return;
-    fetch(`/api/client/claim?ts=${Date.now()}`, {
+    fetchJson<{ ok: boolean; claim: ClientClaim | null }>(`/api/client/claim?ts=${Date.now()}`, {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
       body: JSON.stringify({ initData }),
       cache: "no-store",
     })
-      .then((response) => response.json())
       .then((data) => {
         if (data.ok) {
           setClaim(data.claim || null);

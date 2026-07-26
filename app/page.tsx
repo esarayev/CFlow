@@ -149,6 +149,7 @@ type ActionMode = "receive" | "issue" | "move" | "client" | "shipment" | "paymen
 type DashboardPanel = "codes" | "address" | null;
 type DetailModalState = { type: "box"; id: string } | { type: "client"; id: string } | null;
 type CurrencyPairId = "USD_KZT" | "CNY_KZT" | "USD_CNY" | "KZT_USD" | "KZT_CNY" | "CNY_USD";
+type CurrencyCode = "USD" | "KZT" | "CNY";
 
 type ActionFormState = {
   track: string;
@@ -1569,7 +1570,14 @@ function CurrencyRatesPanel({
     { id: "KZT_CNY", label: "Тенге → юань", from: "KZT", to: "CNY", flags: "🇰🇿 🇨🇳", value: cnyKzt ? 1 / cnyKzt : 0, suffix: "¥" },
     { id: "CNY_USD", label: "Юань → доллар", from: "CNY", to: "USD", flags: "🇨🇳 🇺🇸", value: usdCny ? 1 / usdCny : 0, suffix: "$" },
   ];
+  const currencyMeta: Record<CurrencyCode, { flag: string; symbol: string; tone: string; name: string }> = {
+    USD: { flag: "🇺🇸", symbol: "$", tone: "usd", name: "Dollar" },
+    KZT: { flag: "🇰🇿", symbol: "₸", tone: "kzt", name: "Tenge" },
+    CNY: { flag: "🇨🇳", symbol: "¥", tone: "cny", name: "Yuan" },
+  };
   const selectedPair = pairs.find((item) => item.id === pair) || pairs[0];
+  const fromMeta = currencyMeta[selectedPair.from as CurrencyCode];
+  const toMeta = currencyMeta[selectedPair.to as CurrencyCode];
   const updatedAt = rates?.updatedAt ? new Date(rates.updatedAt) : null;
   const updatedLabel = updatedAt && Number.isFinite(updatedAt.getTime())
     ? new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(updatedAt)
@@ -1580,7 +1588,7 @@ function CurrencyRatesPanel({
       <div className="panel-head compact">
         <div>
           <span className="eyebrow">Онлайн курс</span>
-          <h2>{selectedPair.flags} Валюты</h2>
+          <h2>Валюты</h2>
         </div>
         <button type="button" onClick={onRefresh} disabled={loading}>{loading ? "Обновляем..." : "Обновить"}</button>
       </div>
@@ -1595,7 +1603,11 @@ function CurrencyRatesPanel({
             </select>
           </label>
           <div className="currency-compact-rate">
-            <span>{selectedPair.from}</span>
+            <div className="currency-flags-row">
+              <CurrencyChip code={selectedPair.from} meta={fromMeta} />
+              <span className="currency-arrow">→</span>
+              <CurrencyChip code={selectedPair.to} meta={toMeta} />
+            </div>
             <strong>1 = {formatRate(selectedPair.value)} {selectedPair.suffix}</strong>
             <small>{selectedPair.label}</small>
           </div>
@@ -1608,6 +1620,16 @@ function CurrencyRatesPanel({
         </div>
       )}
     </article>
+  );
+}
+
+function CurrencyChip({ code, meta }: { code: string; meta: { flag: string; symbol: string; tone: string; name: string } }) {
+  return (
+    <span className={`currency-chip ${meta.tone}`} title={meta.name}>
+      <b>{meta.flag}</b>
+      <i>{meta.symbol}</i>
+      {code}
+    </span>
   );
 }
 

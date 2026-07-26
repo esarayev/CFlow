@@ -31,8 +31,29 @@ type SettingsData = {
   chinaAddress?: string;
 };
 
+type ManageInvoiceItem = {
+  id?: string;
+  clientCode?: string;
+  clientId?: string;
+  clientName?: string;
+  track?: string;
+  weight?: string;
+  status?: string;
+  notifiedAt?: string;
+};
+
+type ManageInvoice = {
+  id: string;
+  number: string;
+  supplier?: string;
+  date?: string;
+  status?: string;
+  items?: ManageInvoiceItem[];
+  updatedAt?: string;
+};
+
 type ViewMode = "pending" | "all";
-type ManageSection = "clients" | "broadcast";
+type ManageSection = "clients" | "invoices" | "broadcast";
 type BroadcastAudience = "approved" | "telegram" | "pending";
 
 type BroadcastDraft = {
@@ -97,6 +118,7 @@ function audienceLabel(audience: BroadcastAudience) {
 export default function ManageMiniApp() {
   const [initData, setInitData] = useState("");
   const [clients, setClients] = useState<ManageClient[]>([]);
+  const [invoices, setInvoices] = useState<ManageInvoice[]>([]);
   const [clientCodes, setClientCodes] = useState<ClientCodeItem[]>([]);
   const [settings, setSettings] = useState<SettingsData>({});
   const [selectedId, setSelectedId] = useState("");
@@ -142,6 +164,7 @@ export default function ManageMiniApp() {
   useEffect(() => {
     if (!initData) return;
     loadClients();
+    loadInvoices();
   }, [initData]);
 
   const pendingClients = useMemo(() => clients.filter((client) => client.registrationStatus !== "approved"), [clients]);
@@ -197,6 +220,38 @@ export default function ManageMiniApp() {
         setError("");
       })
       .catch(() => setError("Не удалось подключиться к сервису."))
+      .finally(() => setIsLoading(false));
+  }
+
+  function loadInvoices() {
+    fetch(`/api/manage/invoices?initData=${encodeURIComponent(initData)}`)
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.ok) setInvoices(Array.isArray(data.invoices) ? data.invoices : []);
+      })
+      .catch(() => undefined);
+  }
+
+  function invoiceAction(invoiceId: string, action: "confirm" | "notify") {
+    setIsLoading(true);
+    fetch(`/api/manage/invoices/${action}`, {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ initData, invoiceId }),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!data.ok) {
+          setError(data.error || "Действие по накладной не выполнено.");
+          return;
+        }
+        if (data.data?.clients) setClients(data.data.clients);
+        if (data.data?.invoices) setInvoices(data.data.invoices);
+        else if (data.invoice) setInvoices((current) => current.map((invoice) => invoice.id === data.invoice.id ? data.invoice : invoice));
+        setNotice(action === "confirm" ? "Накладная подтверждена." : `Уведомления отправлены: ${data.sent || 0} из ${data.total || 0}.`);
+        setError("");
+      })
+      .catch(() => setError("Не удалось выполнить действие по накладной."))
       .finally(() => setIsLoading(false));
   }
 
@@ -368,6 +423,9 @@ export default function ManageMiniApp() {
           <button className={section === "clients" ? "active" : ""} type="button" onClick={() => setSection("clients")}>
             Клиенты
           </button>
+          <button className={section === "invoices" ? "active" : ""} type="button" onClick={() => setSection("invoices")}>
+            Накладные
+          </button>
           <button className={section === "broadcast" ? "active" : ""} type="button" onClick={() => setSection("broadcast")}>
             Сообщение
           </button>
@@ -443,7 +501,42 @@ export default function ManageMiniApp() {
               </button>
             </form>
           ) : null}
-        </section> : (
+        </section> : section === "invoices" ? (
+          <section className="broadcast-grid">
+            <article className="client-card">
+              <div className="client-section-head">
+                <h2>Накладные</h2>
+                <span>{invoices.length} всего</span>
+              </div>
+              <div className="manage-list">
+                {invoices.map((invoice) => {
+                  const items = Array.isArray(invoice.items) ? invoice.items : [];
+                  const notified = items.filter((item) => item.notifiedAt).length;
+                  const matched = items.filter((item) => item.clientId || item.clientName).length;
+                  return (
+                    <div className="manage-invoice-card" key={invoice.id}>
+                      <div>
+                        <strong>{invoice.number || invoice.id}</strong>
+                        <span>{invoice.supplier || "Склад Китай"} - {invoice.date || "без даты"}</span>
+                        <small>{invoice.status || "draft"} - строк: {items.length} - найдено: {matched}/{items.length} - уведомлено: {notified}/{items.length}</small>
+                      </div>
+                      <div className="manage-invoice-actions">
+                        <button type="button" disabled={isLoading || invoice.status === "confirmed" || invoice.status === "notified"} onClick={() => invoiceAction(invoice.id, "confirm")}>Подтвердить</button>
+                        <button className="primary" type="button" disabled={isLoading || !items.length || notified === items.length} onClick={() => invoiceAction(invoice.id, "notify")}>Уведомить</button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {!invoices.length ? (
+                  <div className="empty-state">
+                    <strong>Накладных пока нет</strong>
+                    <span>Создайте накладную в desktop-приложении, и она появится здесь.</span>
+                  </div>
+                ) : null}
+              </div>
+            </article>
+          </section>
+        ) : (
           <section className="broadcast-grid">
             <form className="client-card client-form broadcast-form" onSubmit={sendBroadcast}>
               <div className="client-section-head">

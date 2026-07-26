@@ -451,6 +451,7 @@ async function pullCloudSnapshot(data) {
   });
   changed = mergeById(data.boxes, snapshot.boxes) || changed;
   changed = mergeById(data.shipments, snapshot.shipments) || changed;
+  changed = mergeById(data.invoices, snapshot.invoices) || changed;
   changed = mergeById(data.activity, snapshot.activity) || changed;
   changed = mergeClientCodes(data, snapshot.clientCodes) || changed;
   changed = mergeDeletedBoxes(data, snapshot.deletedBoxes) || changed;
@@ -515,12 +516,58 @@ function chargeableWeight(weight, dimensions) {
   return Math.max(numericWeight(weight), volumeWeight(dimensions));
 }
 
+function findClientByClientCode(data, clientCode) {
+  const normalized = normalizeGeneratedClientCode(clientCode).toLowerCase();
+  if (!normalized) return null;
+  return data.clients.find((client) => String(client.clientCode || "").toLowerCase() === normalized) || null;
+}
+
+function normalizeInvoiceItem(data, item, index = 0) {
+  const clientCode = normalizeGeneratedClientCode(item.clientCode || item.code || "");
+  const client = findClientByClientCode(data, clientCode);
+  return {
+    id: String(item.id || makeId("INVITEM", index)).trim(),
+    clientCode,
+    clientId: client?.id || String(item.clientId || "").trim(),
+    clientName: client?.name || String(item.clientName || "").trim(),
+    phone: client?.phone || String(item.phone || "").trim(),
+    telegramId: client?.telegramId || String(item.telegramId || "").trim(),
+    track: String(item.track || "").trim(),
+    weight: String(item.weight || "").trim(),
+    dimensions: String(item.dimensions || "").trim(),
+    description: String(item.description || "").trim(),
+    boxId: String(item.boxId || "").trim(),
+    status: client ? String(item.status || "Клиент найден").trim() : "Клиент не найден",
+    notifiedAt: String(item.notifiedAt || "").trim(),
+    confirmedAt: String(item.confirmedAt || "").trim(),
+  };
+}
+
+function normalizeInvoice(data, input) {
+  const now = nowIso();
+  const items = Array.isArray(input.items) ? input.items : [];
+  return {
+    id: String(input.id || makeId("INV", data.invoices.length)).trim(),
+    number: String(input.number || input.title || "").trim(),
+    supplier: String(input.supplier || "Иван / склад Китай").trim(),
+    date: String(input.date || now.slice(0, 10)).trim(),
+    status: String(input.status || "draft").trim(),
+    comment: String(input.comment || "").trim(),
+    items: items.map((item, index) => normalizeInvoiceItem(data, item, index)).filter((item) => item.clientCode || item.track || item.description),
+    createdAt: String(input.createdAt || now),
+    updatedAt: now,
+    confirmedAt: String(input.confirmedAt || "").trim(),
+    notifiedAt: String(input.notifiedAt || "").trim(),
+  };
+}
+
 function emptyStore() {
   return {
     boxes: [],
     clients: [],
     warehouse: [],
     shipments: [],
+    invoices: [],
     finances: {
       incomeToday: 0,
       expectedToday: 0,
@@ -586,6 +633,7 @@ function readStore(app) {
     clients: Array.isArray(data.clients) ? data.clients : [],
     warehouse: Array.isArray(data.warehouse) ? data.warehouse : [],
     shipments: Array.isArray(data.shipments) ? data.shipments : [],
+    invoices: Array.isArray(data.invoices) ? data.invoices : [],
     activity: Array.isArray(data.activity) ? data.activity : [],
     clientCodes: Array.isArray(data.clientCodes) ? data.clientCodes.map((item, index) => normalizeClientCodeItem(item, index)).filter((item) => item.code) : [],
     deletedBoxes: Array.isArray(data.deletedBoxes) ? data.deletedBoxes.map(normalizeDeletedBox).filter((item) => item.id) : [],
@@ -905,6 +953,108 @@ async function issueClientCode(app, input) {
   return publicSnapshot(app);
 }
 
+async function createInvoice(app, input) {
+  const data = readStore(app);
+  const invoice = normalizeInvoice(data, input);
+  if (!invoice.number) return { ok: false, error: "Укажите номер накладной" };
+  if (!invoice.items.length) return { ok: false, error: "Добавьте хотя бы одну строку накладной" };
+  const existingIndex = data.invoices.findIndex((item) => item.id === invoice.id);
+  if (existingIndex >= 0) data.invoices[existingIndex] = { ...data.invoices[existingIndex], ...invoice };
+  else data.invoices.unshift(invoice);
+  logActivity(data, "Накладная", `Накладная ${invoice.number} сохранена, строк: ${invoice.items.length}`, input.user || "Оператор");
+  writeStore(app, data);
+  await cloudRequest("/api/admin/invoices/upsert", {
+    method: "POST",
+    body: JSON.stringify({ invoice }),
+  });
+  return publicSnapshot(app);
+}
+
+async function confirmInvoiceLocal(app, input) {
+  const data = readStore(app);
+  const invoiceId = String(input.invoiceId || input.id || "").trim();
+  const invoice = data.invoices.find((item) => item.id === invoiceId);
+  if (!invoice) return { ok: false, error: "Накладная не найдена" };
+  const now = nowIso();
+  const items = invoice.items.map((sourceItem, index) => {
+    const item = normalizeInvoiceItem(data, sourceItem, index);
+    let boxId = item.boxId;
+    if (!boxId) {
+      const existingByTrack = item.track ? data.boxes.find((box) => String(box.track || "").toLowerCase() === item.track.toLowerCase()) : null;
+      if (existingByTrack) {
+        boxId = existingByTrack.id;
+      } else {
+        const client = item.clientId ? data.clients.find((clientItem) => clientItem.id === item.clientId) : findClientByClientCode(data, item.clientCode);
+        const box = {
+          id: makeId("CF", data.boxes.length),
+          track: item.track || `INV-${invoice.number}-${index + 1}`,
+          code: item.description || "",
+          clientCode: item.clientCode,
+          clientId: client?.id || item.clientId || "",
+          client: client?.name || item.clientName || "Клиент не найден",
+          phone: client?.phone || item.phone || "",
+          telegramId: client?.telegramId || item.telegramId || "",
+          status: "На складе в Китае",
+          place: "Склад Китай",
+          weight: item.weight,
+          dimensions: item.dimensions,
+          route: "Китай -> Казахстан",
+          payment: "Не оплачено",
+          amount: 0,
+          batch: invoice.number,
+          invoiceId: invoice.id,
+          invoiceItemId: item.id,
+          comment: item.description || invoice.comment || "",
+          createdAt: now,
+          updatedAt: now,
+          owner: input.user || "Оператор",
+        };
+        data.boxes.unshift(box);
+        boxId = box.id;
+        logActivity(data, "Накладная", `${box.id}: товар из накладной ${invoice.number} на складе в Китае`, input.user || "Оператор", box.id);
+      }
+    }
+    return { ...item, boxId, status: item.clientId ? "На складе в Китае" : "Клиент не найден", confirmedAt: item.confirmedAt || now };
+  });
+  invoice.items = items;
+  invoice.status = "confirmed";
+  invoice.confirmedAt = invoice.confirmedAt || now;
+  invoice.updatedAt = now;
+  logActivity(data, "Накладная", `Накладная ${invoice.number} подтверждена`, input.user || "Оператор");
+  writeStore(app, data);
+  const cloud = await cloudRequest("/api/admin/invoices/confirm", {
+    method: "POST",
+    body: JSON.stringify({ invoiceId }),
+  });
+  if (cloud?.data) {
+    mergeById(data.invoices, cloud.data.invoices);
+    mergeById(data.boxes, cloud.data.boxes);
+    writeStore(app, data);
+  } else {
+    await pushCloudSnapshot(data);
+  }
+  return publicSnapshot(app);
+}
+
+async function notifyInvoiceLocal(app, input) {
+  const data = readStore(app);
+  const invoiceId = String(input.invoiceId || input.id || "").trim();
+  const invoice = data.invoices.find((item) => item.id === invoiceId);
+  if (!invoice) return { ok: false, error: "Накладная не найдена" };
+  const cloud = await cloudRequest("/api/admin/invoices/notify", {
+    method: "POST",
+    body: JSON.stringify({ invoiceId }),
+  });
+  if (!cloud?.ok) return { ok: false, error: cloud?.error || "Облако не отправило уведомления" };
+  if (cloud.data) {
+    mergeById(data.invoices, cloud.data.invoices);
+    mergeById(data.boxes, cloud.data.boxes);
+    writeStore(app, data);
+  }
+  const snapshot = await publicSnapshot(app);
+  return { ...snapshot, sent: cloud.sent || 0, total: cloud.total || 0 };
+}
+
 function createShipment(app, input) {
   const data = readStore(app);
   const title = String(input.title || "").trim();
@@ -1030,6 +1180,9 @@ function registerCflowIpc(ipcMain, app) {
   ipcMain.handle("cflow-data:add-client-codes", (_event, payload) => withPermission(app, payload, "all", (input) => addClientCodes(app, input)));
   ipcMain.handle("cflow-data:save-warehouse-address", (_event, payload) => withPermission(app, payload, "all", (input) => saveWarehouseAddress(app, input)));
   ipcMain.handle("cflow-data:issue-client-code", (_event, payload) => withPermission(app, payload, "clients", (input) => issueClientCode(app, input)));
+  ipcMain.handle("cflow-data:create-invoice", (_event, payload) => withPermission(app, payload, "warehouse", (input) => createInvoice(app, input)));
+  ipcMain.handle("cflow-data:confirm-invoice", (_event, payload) => withPermission(app, payload, "warehouse", (input) => confirmInvoiceLocal(app, input)));
+  ipcMain.handle("cflow-data:notify-invoice", (_event, payload) => withPermission(app, payload, "warehouse", (input) => notifyInvoiceLocal(app, input)));
   ipcMain.handle("cflow-data:create-shipment", (_event, payload) => withPermission(app, payload, "warehouse", (input) => createShipment(app, input)));
   ipcMain.handle("cflow-data:record-payment", (_event, payload) => withPermission(app, payload, "finance", (input) => recordPayment(app, input)));
   ipcMain.handle("cflow-data:delete-box", (_event, payload) => withPermission(app, payload, "all", (input) => deleteBox(app, input)));

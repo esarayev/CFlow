@@ -105,6 +105,44 @@ type ClientCodeItem = {
   updatedAt?: string;
 };
 
+type InvoiceItem = {
+  id: string;
+  clientCode: string;
+  clientId?: string;
+  clientName?: string;
+  phone?: string;
+  telegramId?: string;
+  track: string;
+  weight: string;
+  dimensions?: string;
+  description?: string;
+  boxId?: string;
+  status?: string;
+  confirmedAt?: string;
+  notifiedAt?: string;
+};
+
+type InvoiceItemDraft = {
+  clientCode: string;
+  track: string;
+  weight: string;
+  description: string;
+};
+
+type Invoice = {
+  id: string;
+  number: string;
+  supplier: string;
+  date: string;
+  status: string;
+  comment?: string;
+  items: InvoiceItem[];
+  createdAt?: string;
+  updatedAt?: string;
+  confirmedAt?: string;
+  notifiedAt?: string;
+};
+
 type SettingsData = {
   chinaAddress?: string;
 };
@@ -114,6 +152,7 @@ type CflowData = {
   clients: ClientItem[];
   warehouse: WarehouseZone[];
   shipments: ShipmentItem[];
+  invoices: Invoice[];
   finances: FinanceData;
   activity: ActivityItem[];
   clientCodes: ClientCodeItem[];
@@ -192,21 +231,24 @@ declare global {
       delete: (userId: string) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
     };
     cflowData?: {
-      snapshot: (payload: Record<string, string>) => Promise<ApiResult>;
-      receiveBox: (payload: Record<string, string>) => Promise<ApiResult>;
-      moveBox: (payload: Record<string, string>) => Promise<ApiResult>;
-      issueBox: (payload: Record<string, string>) => Promise<ApiResult>;
-      updateStatus: (payload: Record<string, string>) => Promise<ApiResult>;
-      problemBox: (payload: Record<string, string>) => Promise<ApiResult>;
-      createClient: (payload: Record<string, string>) => Promise<ApiResult>;
-      addClientCodes: (payload: Record<string, string>) => Promise<ApiResult>;
-      saveWarehouseAddress: (payload: Record<string, string>) => Promise<ApiResult>;
-      issueClientCode: (payload: Record<string, string>) => Promise<ApiResult>;
-      createShipment: (payload: Record<string, string>) => Promise<ApiResult>;
-      recordPayment: (payload: Record<string, string>) => Promise<ApiResult>;
-      deleteBox: (payload: Record<string, string>) => Promise<ApiResult>;
-      deleteClient: (payload: Record<string, string>) => Promise<ApiResult>;
-      currencyRates: (payload: Record<string, string>) => Promise<CurrencyRatesResult>;
+      snapshot: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      receiveBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      moveBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      issueBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      updateStatus: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      problemBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      createClient: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      addClientCodes: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      saveWarehouseAddress: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      issueClientCode: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      createInvoice: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      confirmInvoice: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      notifyInvoice: (payload: Record<string, unknown>) => Promise<ApiResult & { sent?: number; total?: number }>;
+      createShipment: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      recordPayment: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      deleteBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      deleteClient: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      currencyRates: (payload: Record<string, unknown>) => Promise<CurrencyRatesResult>;
     };
   }
 }
@@ -216,13 +258,14 @@ const fallbackData: CflowData = {
   clients: [],
   warehouse: [],
   shipments: [],
+  invoices: [],
   finances: { incomeToday: 0, expectedToday: 0, expensesToday: 0, debt: 0 },
   activity: [],
   clientCodes: [],
   settings: { chinaAddress: defaultChinaAddress },
 };
 
-const navItems = ["Dashboard", "Коробки", "Клиенты", "Склад", "Отправки", "Финансы", "Отчеты", "База знаний", "Настройки"];
+const navItems = ["Dashboard", "Коробки", "Клиенты", "Накладные", "Склад", "Отправки", "Финансы", "Отчеты", "База знаний", "Настройки"];
 
 type KnowledgeItem = {
   id: string;
@@ -525,6 +568,30 @@ function clientCodeInfo(clientCode: string | undefined, owner?: ClientItem) {
   );
 }
 
+function parseInvoiceRows(rows: string): InvoiceItemDraft[] {
+  return rows
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const parts = line.split("|").map((item) => item.trim());
+      return {
+        clientCode: parts[0] || "",
+        track: parts[1] || "",
+        weight: parts[2] || "",
+        description: parts.slice(3).join(" | "),
+      };
+    })
+    .filter((item) => item.clientCode || item.track || item.description);
+}
+
+function invoiceItemOwner(clients: ClientItem[], item: Pick<InvoiceItem, "clientCode" | "clientId" | "clientName">) {
+  return clients.find((client) =>
+    (item.clientId && client.id === item.clientId) ||
+    (item.clientCode && client.clientCode?.toLowerCase() === item.clientCode.toLowerCase()),
+  )?.name || item.clientName || "";
+}
+
 export default function Home() {
   const searchRef = useRef<HTMLInputElement>(null);
   const trackRef = useRef<HTMLInputElement>(null);
@@ -572,6 +639,13 @@ export default function Home() {
     shipmentBoxes: "",
     shipmentCost: "",
     nextStatus: "Ждет выдачи",
+  });
+  const [invoiceForm, setInvoiceForm] = useState({
+    number: "",
+    supplier: "Иван / склад Китай",
+    date: new Date().toISOString().slice(0, 10),
+    comment: "",
+    rows: "",
   });
 
   const showFinance = sessionUser ? canSeeFinance(sessionUser) : false;
@@ -726,6 +800,7 @@ export default function Home() {
       clients: Array.isArray(result.data.clients) ? result.data.clients : [],
       warehouse: Array.isArray(result.data.warehouse) ? result.data.warehouse : [],
       shipments: Array.isArray(result.data.shipments) ? result.data.shipments : [],
+      invoices: Array.isArray(result.data.invoices) ? result.data.invoices : [],
       activity: Array.isArray(result.data.activity) ? result.data.activity : [],
       clientCodes: Array.isArray(result.data.clientCodes) ? result.data.clientCodes : [],
       settings: { ...fallbackData.settings, ...(result.data.settings || {}) },
@@ -830,6 +905,55 @@ export default function Home() {
     if (result.ok) setNotice("Адрес склада сохранен");
   }
 
+  async function saveInvoice(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+    const rows = parseInvoiceRows(invoiceForm.rows);
+    if (!invoiceForm.number.trim()) {
+      setError("Укажите номер накладной");
+      return;
+    }
+    if (!rows.length) {
+      setError("Добавьте строки накладной: код | трек | вес | описание");
+      return;
+    }
+    const result = await runApi(
+      window.cflowData.createInvoice(securePayload({
+        number: invoiceForm.number,
+        supplier: invoiceForm.supplier,
+        date: invoiceForm.date,
+        comment: invoiceForm.comment,
+        items: rows.map((item, index) => ({ ...item, id: `ROW-${Date.now()}-${index + 1}` })),
+      })),
+      "Накладная сохранена",
+    );
+    if (result.ok) {
+      setInvoiceForm((current) => ({ ...current, number: "", comment: "", rows: "" }));
+      setActiveNav("Накладные");
+    }
+  }
+
+  async function confirmInvoice(invoiceId: string) {
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+    await runApi(window.cflowData.confirmInvoice(securePayload({ invoiceId })), "Накладная подтверждена, коробки созданы");
+  }
+
+  async function notifyInvoice(invoiceId: string) {
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+    const result = await window.cflowData.notifyInvoice(securePayload({ invoiceId }));
+    applyResult(result);
+    if (result.ok) setNotice(`Уведомления отправлены: ${result.sent || 0} из ${result.total || 0}`);
+  }
+
   async function issueClientCode(client: ClientItem) {
     if (!window.cflowData) {
       setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
@@ -871,7 +995,7 @@ export default function Home() {
     return sessionUser?.name || "Оператор";
   }
 
-  function securePayload(payload: Record<string, string> = {}) {
+  function securePayload(payload: Record<string, unknown> = {}) {
     return { ...payload, user: currentUserName(), sessionToken };
   }
 
@@ -1284,6 +1408,19 @@ export default function Home() {
           <section className="single-page">
             <ClientsPanel clients={filteredClients} onOpenClient={(id) => setDetailModal({ type: "client", id })} />
           </section>
+        ) : activeNav === "Накладные" ? (
+          <section className="tab-grid">
+            <InvoicesPanel
+              invoices={data.invoices}
+              clients={data.clients}
+              form={invoiceForm}
+              setForm={setInvoiceForm}
+              onSubmit={saveInvoice}
+              onConfirm={confirmInvoice}
+              onNotify={notifyInvoice}
+            />
+            {detailsPanel}
+          </section>
         ) : activeNav === "Склад" ? (
           <section className="single-page">
             <WarehousePanel zones={data.warehouse} />
@@ -1492,6 +1629,102 @@ function BoxesPanel({ boxes, selectedId, onOpenBox }: { boxes: BoxItem[]; select
         {!boxes.length ? <p className="empty-state">Ничего не найдено</p> : null}
       </div>
     </article>
+  );
+}
+
+function InvoicesPanel({
+  invoices,
+  clients,
+  form,
+  setForm,
+  onSubmit,
+  onConfirm,
+  onNotify,
+}: {
+  invoices: Invoice[];
+  clients: ClientItem[];
+  form: { number: string; supplier: string; date: string; comment: string; rows: string };
+  setForm: Dispatch<SetStateAction<{ number: string; supplier: string; date: string; comment: string; rows: string }>>;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onConfirm: (invoiceId: string) => void;
+  onNotify: (invoiceId: string) => void;
+}) {
+  const draftRows = parseInvoiceRows(form.rows);
+  const matchedRows = draftRows.filter((item) => invoiceItemOwner(clients, item)).length;
+  const sortedInvoices = [...invoices].sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+
+  function update(field: keyof typeof form, value: string) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  return (
+    <div className="left-flow">
+      <article className="panel">
+        <div className="panel-head compact">
+          <div>
+            <span className="eyebrow">Документ склада Китая</span>
+            <h2>Новая накладная</h2>
+          </div>
+          <span className="counter">{matchedRows}/{draftRows.length} клиентов найдено</span>
+        </div>
+        <form className="invoice-form" onSubmit={onSubmit}>
+          <div className="form-grid">
+            <label>Номер накладной<input value={form.number} onChange={(event) => update("number", event.target.value)} placeholder="Иван-26.07-01" /></label>
+            <label>Отправитель<input value={form.supplier} onChange={(event) => update("supplier", event.target.value)} /></label>
+            <label>Дата<input type="date" value={form.date} onChange={(event) => update("date", event.target.value)} /></label>
+          </div>
+          <label>Строки накладной<textarea value={form.rows} onChange={(event) => update("rows", event.target.value)} placeholder="奇瑞QR AST A001 | YT123456CN | 1.4 | Кроссовки&#10;奇瑞QR AST A002 | SF987654CN | 0.8 | Чехол" /></label>
+          <label>Комментарий<input value={form.comment} onChange={(event) => update("comment", event.target.value)} placeholder="Фото накладной, уточнения Ивана, партия" /></label>
+          <button className="primary" type="submit">Сохранить накладную</button>
+        </form>
+        {draftRows.length ? (
+          <div className="invoice-preview">
+            {draftRows.map((item, index) => {
+              const owner = invoiceItemOwner(clients, item);
+              return (
+                <div className="invoice-line" key={`${item.clientCode}-${item.track}-${index}`}>
+                  <span className={owner ? "status" : "status danger"}>{owner ? "Клиент найден" : "Клиент не найден"}</span>
+                  <strong>{item.clientCode || "без кода"}</strong>
+                  <small>{owner || "Проверьте код клиента"} · {item.track || "трек не указан"} · {item.weight || "вес не указан"}</small>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </article>
+
+      <article className="panel">
+        <div className="panel-head compact">
+          <div>
+            <span className="eyebrow">Общая база</span>
+            <h2>Накладные</h2>
+          </div>
+          <span className="counter">{invoices.length} всего</span>
+        </div>
+        <div className="invoice-list">
+          {sortedInvoices.map((invoice) => {
+            const items = Array.isArray(invoice.items) ? invoice.items : [];
+            const notified = items.filter((item) => item.notifiedAt).length;
+            const matched = items.filter((item) => invoiceItemOwner(clients, item)).length;
+            return (
+              <div className="invoice-card" key={invoice.id}>
+                <div>
+                  <span className={`status ${invoice.status === "notified" ? "" : invoice.status === "confirmed" ? "blue" : "neutral"}`}>{invoice.status || "draft"}</span>
+                  <h3>{invoice.number}</h3>
+                  <p>{invoice.supplier} · {invoice.date} · строк: {items.length}</p>
+                  <small>Клиентов найдено: {matched}/{items.length} · уведомлено: {notified}/{items.length}</small>
+                </div>
+                <div className="invoice-actions">
+                  <button type="button" onClick={() => onConfirm(invoice.id)} disabled={invoice.status === "confirmed" || invoice.status === "notified"}>Подтвердить</button>
+                  <button className="primary" type="button" onClick={() => onNotify(invoice.id)} disabled={!items.length || notified === items.length}>Отправить уведомления</button>
+                </div>
+              </div>
+            );
+          })}
+          {!invoices.length ? <p className="empty-state">Накладных пока нет. Сохраните первую накладную от Ивана.</p> : null}
+        </div>
+      </article>
+    </div>
   );
 }
 

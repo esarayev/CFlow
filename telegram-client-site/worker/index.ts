@@ -82,6 +82,7 @@ const memoryClients = new Map<string, CflowClient>();
 const memoryBoxes = new Map<string, CflowBox>();
 const memoryShipments = new Map<string, CflowStoredEntity>();
 const memoryActivity = new Map<string, CflowStoredEntity>();
+const memoryInvoices = new Map<string, CflowStoredEntity>();
 const memoryClientCodes = new Map<string, CflowClientCode>();
 const memorySettings = new Map<string, string>();
 const memoryDeletedBoxes = new Map<string, CflowTombstone>();
@@ -333,6 +334,13 @@ async function ensureTables(db?: D1Database) {
       id TEXT PRIMARY KEY,
       time TEXT DEFAULT '',
       box_id TEXT DEFAULT '',
+      updated_at TEXT NOT NULL,
+      payload TEXT NOT NULL
+    )
+  `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS invoices (
+      id TEXT PRIMARY KEY,
       updated_at TEXT NOT NULL,
       payload TEXT NOT NULL
     )
@@ -668,11 +676,19 @@ async function listDeletedClients(env: Env) {
   return result.results || [];
 }
 
-async function upsertEntity(env: Env, table: "shipments" | "activity", input: Record<string, unknown>, prefix: string) {
+type StoredEntityTable = "shipments" | "activity" | "invoices";
+
+function entityMemory(table: StoredEntityTable) {
+  if (table === "shipments") return memoryShipments;
+  if (table === "activity") return memoryActivity;
+  return memoryInvoices;
+}
+
+async function upsertEntity(env: Env, table: StoredEntityTable, input: Record<string, unknown>, prefix: string) {
   await ensureTables(env.DB);
   const id = String(input.id || "").trim();
   let existing: CflowStoredEntity | null = null;
-  const memory = table === "shipments" ? memoryShipments : memoryActivity;
+  const memory = entityMemory(table);
   if (id) {
     existing = env.DB
       ? await env.DB.prepare(`SELECT * FROM ${table} WHERE id = ?`).bind(id).first<CflowStoredEntity>()
@@ -695,16 +711,16 @@ async function upsertEntity(env: Env, table: "shipments" | "activity", input: Re
     return entity;
   }
   await env.DB.prepare(`
-    INSERT INTO shipments (id, updated_at, payload)
+    INSERT INTO ${table} (id, updated_at, payload)
     VALUES (?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, payload = excluded.payload
   `).bind(entity.id, entity.updated_at, entity.payload).run();
   return entity;
 }
 
-async function listEntities(env: Env, table: "shipments" | "activity") {
+async function listEntities(env: Env, table: StoredEntityTable) {
   await ensureTables(env.DB);
-  const memory = table === "shipments" ? memoryShipments : memoryActivity;
+  const memory = entityMemory(table);
   if (!env.DB) return [...memory.values()].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   const result = await env.DB.prepare(`SELECT id, updated_at, payload FROM ${table} ORDER BY updated_at DESC`).all<CflowStoredEntity>();
   return result.results || [];
@@ -952,6 +968,7 @@ async function cloudSnapshot(env: Env) {
   const clients = await listClients(env);
   const boxes = (await listBoxes(env)).map(toDesktopBox);
   const shipments = (await listEntities(env, "shipments")).map(toDesktopEntity);
+  const invoices = (await listEntities(env, "invoices")).map(toDesktopEntity);
   const activity = (await listEntities(env, "activity")).map(toDesktopEntity);
   const clientCodes = (await listClientCodes(env)).map(toDesktopClientCode);
   const deletedBoxes = (await listDeletedBoxes(env)).map((item) => ({
@@ -969,6 +986,7 @@ async function cloudSnapshot(env: Env) {
     clients: clients.map(toDesktopClient),
     boxes,
     shipments,
+    invoices,
     warehouse: deriveWarehouse(boxes),
     finances: deriveFinances(boxes),
     activity,
@@ -1124,6 +1142,178 @@ function shouldNotifyApproval(before: CflowClient | null, after: CflowClient) {
   return before.registration_status !== "approved" || before.client_code !== after.client_code || before.china_address !== after.china_address;
 }
 
+async function findInvoice(env: Env, id: string) {
+  await ensureTables(env.DB);
+  const cleanId = normalizeId(id);
+  if (!cleanId) return null;
+  if (!env.DB) return memoryInvoices.get(cleanId) || null;
+  return await env.DB.prepare("SELECT id, updated_at, payload FROM invoices WHERE id = ?").bind(cleanId).first<CflowStoredEntity>();
+}
+
+function invoicePayload(entity: CflowStoredEntity | null) {
+  if (!entity) return null;
+  return toDesktopEntity(entity) as Record<string, unknown>;
+}
+
+function invoiceItems(invoice: Record<string, unknown>) {
+  return Array.isArray(invoice.items) ? invoice.items as Record<string, unknown>[] : [];
+}
+
+async function saveInvoicePayload(env: Env, invoice: Record<string, unknown>) {
+  return await upsertEntity(env, "invoices", { ...invoice, updatedAt: nowIso() }, "INV");
+}
+
+async function resolveInvoiceItem(env: Env, item: Record<string, unknown>) {
+  const clientCode = normalizeGeneratedClientCode(item.clientCode || item.code || "");
+  const client = await findClient(env, { clientCode });
+  return {
+    ...item,
+    clientCode,
+    clientId: client?.id || String(item.clientId || ""),
+    clientName: client?.name || String(item.clientName || ""),
+    phone: client?.phone || String(item.phone || ""),
+    telegramId: client?.telegram_id || String(item.telegramId || ""),
+    matchStatus: client ? "matched" : "not_found",
+  };
+}
+
+async function createBoxFromInvoiceItem(env: Env, invoice: Record<string, unknown>, item: Record<string, unknown>) {
+  const existingBoxes = await listBoxes(env);
+  const track = String(item.track || "").trim();
+  const existingById = String(item.boxId || "") ? existingBoxes.find((box) => box.id === String(item.boxId)) : undefined;
+  const existingByTrack = track ? existingBoxes.find((box) => box.track.toLowerCase() === track.toLowerCase()) : undefined;
+  if (existingById || existingByTrack) return existingById || existingByTrack;
+
+  const client = item.clientId ? await findClient(env, { id: String(item.clientId) }) : await findClient(env, { clientCode: String(item.clientCode || "") });
+  const now = nowIso();
+  return await upsertBox(env, {
+    id: makeBoxId(),
+    track: track || `INV-${String(invoice.number || invoice.id || "").trim()}-${String(item.id || Date.now())}`,
+    code: String(item.marking || item.code || item.description || "").trim(),
+    clientCode: item.clientCode || client?.client_code || "",
+    clientId: client?.id || item.clientId || "",
+    client: client?.name || item.clientName || "Клиент не найден",
+    phone: client?.phone || item.phone || "",
+    telegramId: client?.telegram_id || item.telegramId || "",
+    status: "На складе в Китае",
+    place: "Склад Китай",
+    weight: String(item.weight || ""),
+    dimensions: String(item.dimensions || ""),
+    route: "Китай -> Казахстан",
+    payment: "Не оплачено",
+    amount: 0,
+    batch: String(invoice.number || invoice.title || invoice.id || ""),
+    invoiceId: String(invoice.id || ""),
+    invoiceItemId: String(item.id || ""),
+    comment: String(item.description || invoice.comment || ""),
+    owner: "Накладная",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+async function confirmInvoice(env: Env, invoiceId: string) {
+  const entity = await findInvoice(env, invoiceId);
+  const invoice = invoicePayload(entity);
+  if (!invoice) throw new Error("Накладная не найдена");
+  const resolvedItems = [];
+  for (const sourceItem of invoiceItems(invoice)) {
+    const item = await resolveInvoiceItem(env, sourceItem);
+    const box = await createBoxFromInvoiceItem(env, invoice, item);
+    resolvedItems.push({
+      ...item,
+      boxId: box?.id || item.boxId || "",
+      status: item.matchStatus === "matched" ? "На складе в Китае" : "Клиент не найден",
+      confirmedAt: item.confirmedAt || nowIso(),
+    });
+  }
+  const nextInvoice = {
+    ...invoice,
+    status: "confirmed",
+    confirmedAt: invoice.confirmedAt || nowIso(),
+    updatedAt: nowIso(),
+    items: resolvedItems,
+  };
+  await saveInvoicePayload(env, nextInvoice);
+  await upsertEntity(env, "activity", {
+    id: `ACT-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+    time: nowIso(),
+    title: "Накладная",
+    text: `Накладная ${String(invoice.number || invoice.id || "")} подтверждена, строк: ${resolvedItems.length}`,
+    user: "Cloud",
+    updatedAt: nowIso(),
+  }, "ACT");
+  return nextInvoice;
+}
+
+function invoiceNotificationText(invoice: Record<string, unknown>, client: CflowClient, items: Record<string, unknown>[]) {
+  const lines = items.map((item, index) => {
+    const track = String(item.track || item.boxId || `место ${index + 1}`).trim();
+    const weight = String(item.weight || "").trim();
+    return `• ${escapeHtml(track)}${weight ? `, ${escapeHtml(weight)} кг` : ""}`;
+  });
+  return [
+    "📦 Ваш товар зарегистрирован на складе в Китае.",
+    "",
+    `Клиент: <b>${escapeHtml(client.name)}</b>`,
+    `Накладная: <b>${escapeHtml(invoice.number || invoice.id || "")}</b>`,
+    `Количество мест: <b>${items.length}</b>`,
+    "",
+    ...lines,
+    "",
+    "Статус уже отображается в кабинете: На складе в Китае.",
+  ].join("\n");
+}
+
+async function notifyInvoiceClients(env: Env, request: Request, invoiceId: string) {
+  const entity = await findInvoice(env, invoiceId);
+  const invoice = invoicePayload(entity);
+  if (!invoice) throw new Error("Накладная не найдена");
+  const items = invoiceItems(invoice);
+  const clients = await listClients(env);
+  const clientsById = new Map(clients.map((client) => [client.id, client]));
+  const groups = new Map<string, { client: CflowClient; items: Record<string, unknown>[] }>();
+
+  for (const item of items) {
+    if (item.notifiedAt) continue;
+    const client = clientsById.get(String(item.clientId || "")) || await findClient(env, { clientCode: String(item.clientCode || "") });
+    if (!client?.telegram_id) continue;
+    const group = groups.get(client.id) || { client, items: [] };
+    group.items.push(item);
+    groups.set(client.id, group);
+  }
+
+  let sent = 0;
+  const notifiedItemIds = new Set<string>();
+  for (const group of groups.values()) {
+    const result = await telegramApi(env, "sendMessage", {
+      chat_id: group.client.telegram_id,
+      parse_mode: "HTML",
+      text: invoiceNotificationText(invoice, group.client, group.items),
+      reply_markup: telegramReplyKeyboard(clientWebAppUrl(request, env)),
+    });
+    if ((result as { ok?: boolean }).ok) {
+      sent += 1;
+      group.items.forEach((item) => notifiedItemIds.add(String(item.id || item.boxId || item.track || "")));
+    }
+  }
+
+  const now = nowIso();
+  const nextItems = items.map((item) => {
+    const key = String(item.id || item.boxId || item.track || "");
+    return notifiedItemIds.has(key) ? { ...item, notifiedAt: now, status: item.status || "На складе в Китае" } : item;
+  });
+  const nextInvoice = {
+    ...invoice,
+    status: sent > 0 ? "notified" : invoice.status,
+    notifiedAt: sent > 0 ? now : invoice.notifiedAt,
+    updatedAt: now,
+    items: nextItems,
+  };
+  await saveInvoicePayload(env, nextInvoice);
+  return { invoice: nextInvoice, sent, total: groups.size };
+}
+
 async function handleClientTelegramWebhook(request: Request, env: Env) {
   if (env.CFLOW_ADMIN_TOKEN) {
     const secret = request.headers.get("x-telegram-bot-api-secret-token") || "";
@@ -1211,6 +1401,7 @@ async function handleAdminSyncSnapshot(request: Request, env: Env) {
     const clients = Array.isArray(data.clients) ? data.clients : [];
     const boxes = Array.isArray(data.boxes) ? data.boxes : [];
     const shipments = Array.isArray(data.shipments) ? data.shipments : [];
+    const invoices = Array.isArray(data.invoices) ? data.invoices : [];
     const activity = Array.isArray(data.activity) ? data.activity : [];
     const clientCodes = Array.isArray(data.clientCodes) ? data.clientCodes : [];
     const deletedBoxes = Array.isArray(data.deletedBoxes) ? data.deletedBoxes : [];
@@ -1222,6 +1413,7 @@ async function handleAdminSyncSnapshot(request: Request, env: Env) {
     await Promise.all(clients.map((client) => upsertClient(env, client as Record<string, unknown>)));
     await Promise.all(boxes.map((box) => upsertBox(env, box as Record<string, unknown>)));
     await Promise.all(shipments.map((shipment) => upsertEntity(env, "shipments", shipment as Record<string, unknown>, "SHIP")));
+    await Promise.all(invoices.map((invoice) => upsertEntity(env, "invoices", invoice as Record<string, unknown>, "INV")));
     await Promise.all(activity.map((item) => upsertEntity(env, "activity", item as Record<string, unknown>, "ACT")));
     await Promise.all(clientCodes.map((item, index) => upsertClientCode(env, item as Record<string, unknown>, index)));
     await saveSettings(env, settings);
@@ -1260,6 +1452,40 @@ async function handleAdminDeleteBox(request: Request, env: Env) {
   const body = await request.json() as { boxId?: string; id?: string; reason?: string };
   await upsertDeletedBox(env, { id: String(body.boxId || body.id || ""), reason: body.reason || "", deletedAt: nowIso() });
   return json({ ok: true, data: await cloudSnapshot(env) });
+}
+
+async function handleAdminUpsertInvoice(request: Request, env: Env) {
+  if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
+  try {
+    const body = await request.json() as Record<string, unknown>;
+    const invoice = body.invoice && typeof body.invoice === "object" ? body.invoice as Record<string, unknown> : body;
+    const saved = await saveInvoicePayload(env, invoice);
+    return json({ ok: true, invoice: toDesktopEntity(saved), data: await cloudSnapshot(env) });
+  } catch (error) {
+    return json({ ok: false, error: error instanceof Error ? error.message : "Накладная не сохранена" }, { status: 400 });
+  }
+}
+
+async function handleAdminConfirmInvoice(request: Request, env: Env) {
+  if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
+  try {
+    const body = await request.json() as { invoiceId?: string; id?: string };
+    const invoice = await confirmInvoice(env, String(body.invoiceId || body.id || ""));
+    return json({ ok: true, invoice, data: await cloudSnapshot(env) });
+  } catch (error) {
+    return json({ ok: false, error: error instanceof Error ? error.message : "Накладная не подтверждена" }, { status: 400 });
+  }
+}
+
+async function handleAdminNotifyInvoice(request: Request, env: Env) {
+  if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
+  try {
+    const body = await request.json() as { invoiceId?: string; id?: string };
+    const result = await notifyInvoiceClients(env, request, String(body.invoiceId || body.id || ""));
+    return json({ ok: true, sent: result.sent, total: result.total, invoice: result.invoice, data: await cloudSnapshot(env) });
+  } catch (error) {
+    return json({ ok: false, error: error instanceof Error ? error.message : "Уведомления не отправлены" }, { status: 400 });
+  }
 }
 
 async function handleManageMe(request: Request, env: Env) {
@@ -1319,6 +1545,38 @@ async function handleManageDeleteClient(request: Request, env: Env) {
     return json({ ok: true, deletedClientId: deleted.id, data: await cloudSnapshot(env) });
   } catch (error) {
     return json({ ok: false, error: error instanceof Error ? error.message : "Клиент не удален" }, { status: 400 });
+  }
+}
+
+async function handleManageInvoices(request: Request, env: Env) {
+  const initData = new URL(request.url).searchParams.get("initData") || "";
+  const verified = await verifyManageInitData(initData, env);
+  if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
+  const invoices = (await listEntities(env, "invoices")).map(toDesktopEntity);
+  return json({ ok: true, invoices });
+}
+
+async function handleManageConfirmInvoice(request: Request, env: Env) {
+  const body = await request.json() as { initData?: string; invoiceId?: string; id?: string };
+  const verified = await verifyManageInitData(body.initData || "", env);
+  if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
+  try {
+    const invoice = await confirmInvoice(env, String(body.invoiceId || body.id || ""));
+    return json({ ok: true, invoice, data: await cloudSnapshot(env) });
+  } catch (error) {
+    return json({ ok: false, error: error instanceof Error ? error.message : "Накладная не подтверждена" }, { status: 400 });
+  }
+}
+
+async function handleManageNotifyInvoice(request: Request, env: Env) {
+  const body = await request.json() as { initData?: string; invoiceId?: string; id?: string };
+  const verified = await verifyManageInitData(body.initData || "", env);
+  if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
+  try {
+    const result = await notifyInvoiceClients(env, request, String(body.invoiceId || body.id || ""));
+    return json({ ok: true, sent: result.sent, total: result.total, invoice: result.invoice, data: await cloudSnapshot(env) });
+  } catch (error) {
+    return json({ ok: false, error: error instanceof Error ? error.message : "Уведомления не отправлены" }, { status: 400 });
   }
 }
 
@@ -1427,6 +1685,9 @@ const worker = {
     if (url.pathname === "/api/admin/snapshot/sync" && request.method === "POST") return handleAdminSyncSnapshot(request, env);
     if (url.pathname === "/api/admin/boxes/upsert" && request.method === "POST") return handleAdminUpsertBox(request, env);
     if (url.pathname === "/api/admin/boxes/delete" && request.method === "POST") return handleAdminDeleteBox(request, env);
+    if (url.pathname === "/api/admin/invoices/upsert" && request.method === "POST") return handleAdminUpsertInvoice(request, env);
+    if (url.pathname === "/api/admin/invoices/confirm" && request.method === "POST") return handleAdminConfirmInvoice(request, env);
+    if (url.pathname === "/api/admin/invoices/notify" && request.method === "POST") return handleAdminNotifyInvoice(request, env);
     if (url.pathname === "/api/admin/clients/delete" && request.method === "POST") return handleAdminDeleteClient(request, env);
     if (url.pathname === "/api/admin/telegram-clients/approve" && request.method === "POST") return handleApprove(request, env, ctx);
     if (url.pathname === "/api/manage/me" && request.method === "GET") return handleManageMe(request, env);
@@ -1434,6 +1695,9 @@ const worker = {
     if (url.pathname === "/api/manage/clients/issue-code" && request.method === "POST") return handleManageIssueClientCode(request, env, ctx);
     if (url.pathname === "/api/manage/clients/approve" && request.method === "POST") return handleManageApproveClient(request, env, ctx);
     if (url.pathname === "/api/manage/clients/delete" && request.method === "POST") return handleManageDeleteClient(request, env);
+    if (url.pathname === "/api/manage/invoices" && request.method === "GET") return handleManageInvoices(request, env);
+    if (url.pathname === "/api/manage/invoices/confirm" && request.method === "POST") return handleManageConfirmInvoice(request, env);
+    if (url.pathname === "/api/manage/invoices/notify" && request.method === "POST") return handleManageNotifyInvoice(request, env);
     if (url.pathname === "/api/manage/broadcast" && request.method === "POST") return handleManageBroadcast(request, env);
     if (url.pathname === "/api/telegram/configure" && request.method === "POST") return handleConfigure(request, env);
     if (url.pathname === "/api/telegram/client-webhook" && request.method === "POST") return handleClientTelegramWebhook(request, env);

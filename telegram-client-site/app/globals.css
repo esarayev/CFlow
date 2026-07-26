@@ -1434,6 +1434,32 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   box-shadow: 0 6px 18px rgba(169, 122, 63, .12);
 }
 
+.manage-app .manage-invoice-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--z-border);
+  border-radius: 18px;
+  background: var(--z-card);
+  padding: 14px;
+}
+
+.manage-app .manage-invoice-card strong,
+.manage-app .manage-invoice-card span,
+.manage-app .manage-invoice-card small {
+  display: block;
+}
+
+.manage-app .manage-invoice-card span,
+.manage-app .manage-invoice-card small {
+  color: var(--z-muted);
+}
+
+.manage-app .manage-invoice-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .manage-app .manage-code-box,
 .manage-app .empty-state {
   border: 1px solid var(--z-border);

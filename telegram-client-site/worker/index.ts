@@ -127,12 +127,18 @@ async function hmac(key: ArrayBuffer, value: string) {
 }
 
 function base64UrlEncode(value: string) {
-  return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function base64UrlDecode(value: string) {
   const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
-  return atob(padded);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return new TextDecoder().decode(bytes);
 }
 
 async function signClaimPayload(env: Env, payload: string) {
@@ -1699,7 +1705,14 @@ async function handleMe(request: Request, env: Env) {
   const telegramId = String(verified.user.id);
   const client = await findClient(env, { telegramId });
   const boxes = client ? await getBoxes(env, client) : [];
-  const claim = client ? await clientClaim(env, client, boxes as Record<string, unknown>[]) : null;
+  let claim = null;
+  if (client) {
+    try {
+      claim = await clientClaim(env, client, boxes as Record<string, unknown>[]);
+    } catch {
+      claim = null;
+    }
+  }
   return json({ ok: true, ...publicClient(client, boxes), claim });
 }
 

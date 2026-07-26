@@ -365,6 +365,11 @@ h2 {
   gap: 8px;
 }
 
+.dashboard-side-widgets {
+  display: grid;
+  gap: 12px;
+}
+
 .dashboard-admin-panel {
   margin-bottom: 18px;
 }
@@ -548,60 +553,90 @@ h2 {
 }
 
 .currency-panel {
+  padding: 14px;
   border-color: rgba(60, 83, 139, .18);
   background: linear-gradient(135deg, #ffffff 0%, #f7f9fd 100%);
 }
 
+.currency-panel .panel-head {
+  gap: 10px;
+}
+
+.currency-panel h2 {
+  font-size: 16px;
+}
+
 .currency-panel .panel-head button {
-  min-height: 34px;
-  padding: 0 12px;
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
-.currency-grid {
+.currency-select {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
+  gap: 6px;
+  margin-bottom: 10px;
 }
 
-.currency-grid div,
+.currency-select span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.currency-select select {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid rgba(60, 83, 139, .2);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.currency-compact-rate,
 .currency-empty {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-  padding: 14px;
+  padding: 12px;
 }
 
-.currency-grid span,
-.currency-grid small,
+.currency-compact-rate span,
+.currency-compact-rate small,
 .currency-meta,
 .currency-empty p {
   color: var(--muted);
 }
 
-.currency-grid span {
+.currency-compact-rate span {
   display: block;
   font-size: 12px;
   font-weight: 800;
-  margin-bottom: 7px;
+  margin-bottom: 6px;
 }
 
-.currency-grid strong {
+.currency-compact-rate strong {
   display: block;
   color: var(--ink);
   font-family: var(--font-mono), monospace;
-  font-size: 22px;
+  font-size: 19px;
   line-height: 1.1;
 }
 
-.currency-grid small {
+.currency-compact-rate small {
   display: block;
   font-size: 12px;
-  margin-top: 7px;
+  margin-top: 6px;
 }
 
 .currency-meta {
-  margin: 12px 0 0;
-  font-size: 12px;
+  margin: 9px 0 0;
+  font-size: 11px;
 }
 
 .currency-empty {

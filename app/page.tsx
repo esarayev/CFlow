@@ -148,6 +148,7 @@ type ApplyResultOptions = {
 type ActionMode = "receive" | "issue" | "move" | "client" | "shipment" | "payment" | "problem" | "status";
 type DashboardPanel = "codes" | "address" | null;
 type DetailModalState = { type: "box"; id: string } | { type: "client"; id: string } | null;
+type CurrencyPairId = "USD_KZT" | "CNY_KZT" | "USD_CNY" | "KZT_USD" | "KZT_CNY" | "CNY_USD";
 
 type ActionFormState = {
   track: string;
@@ -1209,19 +1210,22 @@ export default function Home() {
             <p className="lead">{currentPage.lead}</p>
           </div>
           {activeNav === "Dashboard" ? (
-            <div className="scan-card">
-              <span>Быстрое действие</span>
-              <strong>Сканировать трек или QR</strong>
-              <p>Оператор начинает приемку без переходов по меню.</p>
-              <button className="primary" type="button" onClick={openScanner}>Открыть сканер</button>
-              <div className="code-pool-mini">
-                <span>Автокоды: {availableCodeCount} осталось · {assignedCodeCount} выдано</span>
-                <span>{warehouseAddress ? "Адрес склада задан" : "Адрес склада не задан"}</span>
+            <div className="dashboard-side-widgets">
+              <div className="scan-card">
+                <span>Быстрое действие</span>
+                <strong>Сканировать трек или QR</strong>
+                <p>Оператор начинает приемку без переходов по меню.</p>
+                <button className="primary" type="button" onClick={openScanner}>Открыть сканер</button>
+                <div className="code-pool-mini">
+                  <span>Автокоды: {availableCodeCount} осталось · {assignedCodeCount} выдано</span>
+                  <span>{warehouseAddress ? "Адрес склада задан" : "Адрес склада не задан"}</span>
+                </div>
+                <div className="scan-card-actions">
+                  <button type="button" onClick={() => setDashboardPanel("codes")}>Схема кодов</button>
+                  <button type="button" onClick={() => setDashboardPanel("address")}>Адрес склада</button>
+                </div>
               </div>
-              <div className="scan-card-actions">
-                <button type="button" onClick={() => setDashboardPanel("codes")}>Схема кодов</button>
-                <button type="button" onClick={() => setDashboardPanel("address")}>Адрес склада</button>
-              </div>
+              <CurrencyRatesPanel rates={currencyRates} loading={ratesLoading} onRefresh={() => void loadCurrencyRates()} />
             </div>
           ) : null}
         </section>
@@ -1239,7 +1243,6 @@ export default function Home() {
                 </article>
               ))}
             </section>
-            <CurrencyRatesPanel rates={currencyRates} loading={ratesLoading} onRefresh={() => void loadCurrencyRates()} />
             <div className="split-panels">
               <BoxesPanel boxes={filteredBoxes.slice(0, 6)} selectedId={selectedId} onOpenBox={openBoxDetail} />
               <ActivityPanel activity={data.activity} />
@@ -1554,9 +1557,19 @@ function CurrencyRatesPanel({
   loading: boolean;
   onRefresh: () => void;
 }) {
+  const [pair, setPair] = useState<CurrencyPairId>("USD_KZT");
   const usdKzt = rates?.ok && rates.usdKzt ? rates.usdKzt : 0;
   const cnyKzt = rates?.ok && rates.cnyKzt ? rates.cnyKzt : 0;
   const usdCny = rates?.ok && rates.usdCny ? rates.usdCny : 0;
+  const pairs: Array<{ id: CurrencyPairId; label: string; from: string; to: string; flags: string; value: number; suffix: string }> = [
+    { id: "USD_KZT", label: "Доллар → тенге", from: "USD", to: "KZT", flags: "🇺🇸 🇰🇿", value: usdKzt, suffix: "₸" },
+    { id: "CNY_KZT", label: "Юань → тенге", from: "CNY", to: "KZT", flags: "🇨🇳 🇰🇿", value: cnyKzt, suffix: "₸" },
+    { id: "USD_CNY", label: "Доллар → юань", from: "USD", to: "CNY", flags: "🇺🇸 🇨🇳", value: usdCny, suffix: "¥" },
+    { id: "KZT_USD", label: "Тенге → доллар", from: "KZT", to: "USD", flags: "🇰🇿 🇺🇸", value: usdKzt ? 1 / usdKzt : 0, suffix: "$" },
+    { id: "KZT_CNY", label: "Тенге → юань", from: "KZT", to: "CNY", flags: "🇰🇿 🇨🇳", value: cnyKzt ? 1 / cnyKzt : 0, suffix: "¥" },
+    { id: "CNY_USD", label: "Юань → доллар", from: "CNY", to: "USD", flags: "🇨🇳 🇺🇸", value: usdCny ? 1 / usdCny : 0, suffix: "$" },
+  ];
+  const selectedPair = pairs.find((item) => item.id === pair) || pairs[0];
   const updatedAt = rates?.updatedAt ? new Date(rates.updatedAt) : null;
   const updatedLabel = updatedAt && Number.isFinite(updatedAt.getTime())
     ? new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(updatedAt)
@@ -1566,17 +1579,25 @@ function CurrencyRatesPanel({
     <article className="panel currency-panel">
       <div className="panel-head compact">
         <div>
-          <span className="eyebrow">Онлайн курсы</span>
-          <h2>Валюты</h2>
+          <span className="eyebrow">Онлайн курс</span>
+          <h2>{selectedPair.flags} Валюты</h2>
         </div>
         <button type="button" onClick={onRefresh} disabled={loading}>{loading ? "Обновляем..." : "Обновить"}</button>
       </div>
       {rates?.ok ? (
         <>
-          <div className="currency-grid">
-            <div><span>1 USD</span><strong>{formatRate(usdKzt)} ₸</strong><small>доллар → тенге</small></div>
-            <div><span>1 CNY</span><strong>{formatRate(cnyKzt)} ₸</strong><small>юань → тенге</small></div>
-            <div><span>1 USD</span><strong>{formatRate(usdCny)} ¥</strong><small>доллар → юань</small></div>
+          <label className="currency-select">
+            <span>Пара</span>
+            <select value={pair} onChange={(event) => setPair(event.target.value as CurrencyPairId)}>
+              {pairs.map((item) => (
+                <option key={item.id} value={item.id}>{item.flags} {item.label}</option>
+              ))}
+            </select>
+          </label>
+          <div className="currency-compact-rate">
+            <span>{selectedPair.from}</span>
+            <strong>1 = {formatRate(selectedPair.value)} {selectedPair.suffix}</strong>
+            <small>{selectedPair.label}</small>
           </div>
           <p className="currency-meta">Источник: {rates.source || "open.er-api.com"} · обновлено {updatedLabel}</p>
         </>

@@ -1080,7 +1080,7 @@ function boxStage(status: string) {
   if (value.includes("выдан")) return "astana";
   if (value.includes("астан") || value.includes("ждет выдачи") || value.includes("прибыл")) return "astana";
   if (value.includes("казахстан") || value.includes("тамож")) return "kazakhstan";
-  if (value.includes("пути") || value.includes("отправ")) return "road";
+  if (value.includes("пути") || value.includes("отправ")) return "in_transit";
   return "china_warehouse";
 }
 
@@ -1106,8 +1106,8 @@ function isBoxDelivered(box: Record<string, unknown>) {
   return String(box.status || "").trim().toLowerCase().includes("выдан");
 }
 
-async function clientClaim(env: Env, client: CflowClient) {
-  const boxes = await getBoxes(env, client);
+async function clientClaim(env: Env, client: CflowClient, knownBoxes?: Record<string, unknown>[]) {
+  const boxes = knownBoxes || await getBoxes(env, client);
   const activeBoxes = boxes.filter((box) => !isBoxDelivered(box as Record<string, unknown>));
   const boxIds = activeBoxes.map((box) => String((box as { id?: string }).id || "")).filter(Boolean);
   if (!boxIds.length) return null;
@@ -1686,7 +1686,9 @@ async function handleMe(request: Request, env: Env) {
   if (!verified.user?.id) return json({ ok: false, error: "Telegram пользователь не найден" }, { status: 401 });
   const telegramId = String(verified.user.id);
   const client = await findClient(env, { telegramId });
-  return json({ ok: true, ...publicClient(client, client ? await getBoxes(env, client) : []) });
+  const boxes = client ? await getBoxes(env, client) : [];
+  const claim = client ? await clientClaim(env, client, boxes as Record<string, unknown>[]) : null;
+  return json({ ok: true, ...publicClient(client, boxes), claim });
 }
 
 async function handleClientClaim(request: Request, env: Env) {
@@ -1696,8 +1698,8 @@ async function handleClientClaim(request: Request, env: Env) {
   if (!verified.user?.id) return json({ ok: false, error: "Telegram пользователь не найден" }, { status: 401 });
   const client = await findClient(env, { telegramId: String(verified.user.id) });
   if (!client) return json({ ok: false, error: "Клиент не найден" }, { status: 404 });
-  const claim = await clientClaim(env, client);
-  if (!claim) return json({ ok: false, error: "Нет активных посылок для QR" }, { status: 404 });
+  const boxes = await getBoxes(env, client);
+  const claim = await clientClaim(env, client, boxes as Record<string, unknown>[]);
   return json({ ok: true, claim });
 }
 

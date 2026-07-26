@@ -104,6 +104,7 @@ export default function ClientMiniApp() {
         if (data.ok) {
           const nextProfile = { registered: data.registered, approved: data.approved, client: data.client, boxes: data.boxes || [] };
           setProfile(nextProfile);
+          setClaim(data.claim || null);
           cacheProfile(nextProfile);
           setError("");
         } else {
@@ -564,11 +565,11 @@ function StatusesScreen({ boxes, claim, onRefreshClaim }: { boxes: ClientBox[]; 
           <div className="claim-card-head">
             <div>
               <span>Выдача товара</span>
-              <strong>QR появится после поступления на склад</strong>
+              <strong>QR загружается</strong>
             </div>
-            <button type="button" onClick={onRefreshClaim}>Обновить</button>
+            <button type="button" onClick={onRefreshClaim}>Обновить QR</button>
           </div>
-          <small>Когда накладную отметят как поступившую в Астану, здесь появится QR для получения.</small>
+          <small>Если товар уже есть в статусах, нажмите обновление. QR доступен для активных посылок до выдачи товара.</small>
         </article>
       ) : null}
       <div className="neu-filter" role="tablist" aria-label="Фильтр посылок">

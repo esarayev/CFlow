@@ -113,14 +113,10 @@ export default function ClientMiniApp() {
           cacheProfile(nextProfile, telegramUser?.id);
           setError("");
         } else {
-          setProfile(emptyProfile);
-          setClaim(null);
           setError(data.error || "Не удалось загрузить кабинет");
         }
       })
       .catch(() => {
-        setProfile(emptyProfile);
-        setClaim(null);
         setError("Не удалось подключиться к сервису");
       })
       .finally(() => {
@@ -262,7 +258,7 @@ export default function ClientMiniApp() {
         }
         const nextProfile = { registered: data.registered, approved: data.approved, client: data.client, boxes: data.boxes || [] };
         setProfile(nextProfile);
-        cacheProfile(nextProfile);
+        cacheProfile(nextProfile, telegramUser?.id);
         setNotice("Заявка отправлена. После подтверждения появится код и адрес склада.");
         setError("");
       })

@@ -243,6 +243,7 @@ declare global {
       issueClientCode: (payload: Record<string, unknown>) => Promise<ApiResult>;
       createInvoice: (payload: Record<string, unknown>) => Promise<ApiResult>;
       confirmInvoice: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      arriveInvoice: (payload: Record<string, unknown>) => Promise<ApiResult>;
       notifyInvoice: (payload: Record<string, unknown>) => Promise<ApiResult & { sent?: number; total?: number }>;
       createShipment: (payload: Record<string, unknown>) => Promise<ApiResult>;
       recordPayment: (payload: Record<string, unknown>) => Promise<ApiResult>;
@@ -944,6 +945,14 @@ export default function Home() {
     await runApi(window.cflowData.confirmInvoice(securePayload({ invoiceId })), "Накладная подтверждена, коробки созданы");
   }
 
+  async function arriveInvoice(invoiceId: string) {
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+    await runApi(window.cflowData.arriveInvoice(securePayload({ invoiceId })), "Накладная отмечена как поступившая на склад");
+  }
+
   async function notifyInvoice(invoiceId: string) {
     if (!window.cflowData) {
       setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
@@ -1417,6 +1426,7 @@ export default function Home() {
               setForm={setInvoiceForm}
               onSubmit={saveInvoice}
               onConfirm={confirmInvoice}
+              onArrive={arriveInvoice}
               onNotify={notifyInvoice}
             />
             {detailsPanel}
@@ -1639,6 +1649,7 @@ function InvoicesPanel({
   setForm,
   onSubmit,
   onConfirm,
+  onArrive,
   onNotify,
 }: {
   invoices: Invoice[];
@@ -1647,6 +1658,7 @@ function InvoicesPanel({
   setForm: Dispatch<SetStateAction<{ number: string; supplier: string; date: string; comment: string; rows: string }>>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onConfirm: (invoiceId: string) => void;
+  onArrive: (invoiceId: string) => void;
   onNotify: (invoiceId: string) => void;
 }) {
   const draftRows = parseInvoiceRows(form.rows);
@@ -1716,6 +1728,7 @@ function InvoicesPanel({
                 </div>
                 <div className="invoice-actions">
                   <button type="button" onClick={() => onConfirm(invoice.id)} disabled={invoice.status === "confirmed" || invoice.status === "notified"}>Подтвердить</button>
+                  <button type="button" onClick={() => onArrive(invoice.id)} disabled={invoice.status !== "confirmed" && invoice.status !== "notified"}>Поступила</button>
                   <button className="primary" type="button" onClick={() => onNotify(invoice.id)} disabled={!items.length || notified === items.length}>Отправить уведомления</button>
                 </div>
               </div>

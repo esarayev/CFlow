@@ -53,7 +53,7 @@ type ManageInvoice = {
 };
 
 type ViewMode = "pending" | "all";
-type ManageSection = "clients" | "invoices" | "broadcast";
+type ManageSection = "clients" | "invoices" | "scan" | "broadcast";
 type BroadcastAudience = "approved" | "telegram" | "pending";
 
 type BroadcastDraft = {
@@ -130,6 +130,8 @@ export default function ManageMiniApp() {
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [claimToken, setClaimToken] = useState("");
+  const [claimResult, setClaimResult] = useState<any>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -232,7 +234,7 @@ export default function ManageMiniApp() {
       .catch(() => undefined);
   }
 
-  function invoiceAction(invoiceId: string, action: "confirm" | "notify") {
+  function invoiceAction(invoiceId: string, action: "confirm" | "arrive" | "notify") {
     setIsLoading(true);
     fetch(`/api/manage/invoices/${action}`, {
       method: "POST",
@@ -248,11 +250,101 @@ export default function ManageMiniApp() {
         if (data.data?.clients) setClients(data.data.clients);
         if (data.data?.invoices) setInvoices(data.data.invoices);
         else if (data.invoice) setInvoices((current) => current.map((invoice) => invoice.id === data.invoice.id ? data.invoice : invoice));
-        setNotice(action === "confirm" ? "Накладная подтверждена." : `Уведомления отправлены: ${data.sent || 0} из ${data.total || 0}.`);
+        setNotice(action === "confirm" ? "Накладная подтверждена." : action === "arrive" ? "Накладная отмечена как поступившая." : `Уведомления отправлены: ${data.sent || 0} из ${data.total || 0}.`);
         setError("");
       })
       .catch(() => setError("Не удалось выполнить действие по накладной."))
       .finally(() => setIsLoading(false));
+  }
+
+  function scanClaim(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!claimToken.trim()) {
+      setError("Вставьте QR-токен или отсканируйте код.");
+      return;
+    }
+    setIsLoading(true);
+    fetch("/api/manage/claims/scan", {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ initData, token: claimToken.trim() }),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        setClaimResult(data);
+        if (!data.ok) setError(data.error || "QR не прошел проверку.");
+        else {
+          setNotice(data.status?.text || "QR проверен.");
+          setError("");
+        }
+      })
+      .catch(() => setError("Не удалось проверить QR."))
+      .finally(() => setIsLoading(false));
+  }
+
+  function issueClaim() {
+    if (!claimToken.trim()) return;
+    if (!window.confirm("Выдать товар по этому QR?")) return;
+    setIsLoading(true);
+    fetch("/api/manage/claims/issue", {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ initData, token: claimToken.trim() }),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        setClaimResult(data);
+        if (!data.ok) {
+          setError(data.error || "Выдача не выполнена.");
+          return;
+        }
+        setNotice("Товар выдан по QR.");
+        setError("");
+      })
+      .catch(() => setError("Не удалось выдать товар."))
+      .finally(() => setIsLoading(false));
+  }
+
+  async function decodeClaimImage(file?: File) {
+    if (!file) return;
+    const BarcodeDetectorCtor = (window as any).BarcodeDetector;
+    if (!BarcodeDetectorCtor) {
+      setError("Сканер QR недоступен в этом браузере. Вставьте QR-токен вручную.");
+      return;
+    }
+    try {
+      const detector = new BarcodeDetectorCtor({ formats: ["qr_code"] });
+      const bitmap = await createImageBitmap(file);
+      const codes = await detector.detect(bitmap);
+      const value = codes?.[0]?.rawValue || "";
+      if (!value) {
+        setError("QR на изображении не найден.");
+        return;
+      }
+      setClaimToken(value);
+      setClaimResult(null);
+      setError("");
+      setNotice("QR считан. Нажмите Проверить QR.");
+    } catch {
+      setError("Не удалось считать QR. Вставьте QR-токен вручную.");
+    }
+  }
+
+  function openTelegramQrScanner() {
+    const webApp = getWebApp();
+    if (!webApp?.showScanQrPopup) {
+      setError("Сканер Telegram недоступен. Используйте загрузку фото или вставьте QR-токен вручную.");
+      return;
+    }
+    webApp.showScanQrPopup({ text: "Наведите камеру на QR клиента" }, (value: string) => {
+      if (!value) return false;
+      setClaimToken(value);
+      setClaimResult(null);
+      setError("");
+      setNotice("QR считан. Нажмите Проверить QR.");
+      webApp.closeScanQrPopup?.();
+      return true;
+    });
   }
 
   function update(field: keyof Draft, value: string) {
@@ -426,6 +518,9 @@ export default function ManageMiniApp() {
           <button className={section === "invoices" ? "active" : ""} type="button" onClick={() => setSection("invoices")}>
             Накладные
           </button>
+          <button className={section === "scan" ? "active" : ""} type="button" onClick={() => setSection("scan")}>
+            QR выдача
+          </button>
           <button className={section === "broadcast" ? "active" : ""} type="button" onClick={() => setSection("broadcast")}>
             Сообщение
           </button>
@@ -521,7 +616,8 @@ export default function ManageMiniApp() {
                         <small>{invoice.status || "draft"} - строк: {items.length} - найдено: {matched}/{items.length} - уведомлено: {notified}/{items.length}</small>
                       </div>
                       <div className="manage-invoice-actions">
-                        <button type="button" disabled={isLoading || invoice.status === "confirmed" || invoice.status === "notified"} onClick={() => invoiceAction(invoice.id, "confirm")}>Подтвердить</button>
+                        <button type="button" disabled={isLoading || ["confirmed", "notified", "arrived"].includes(invoice.status || "")} onClick={() => invoiceAction(invoice.id, "confirm")}>Подтвердить</button>
+                        <button type="button" disabled={isLoading || !["confirmed", "notified"].includes(invoice.status || "")} onClick={() => invoiceAction(invoice.id, "arrive")}>Поступила</button>
                         <button className="primary" type="button" disabled={isLoading || !items.length || notified === items.length} onClick={() => invoiceAction(invoice.id, "notify")}>Уведомить</button>
                       </div>
                     </div>
@@ -534,6 +630,58 @@ export default function ManageMiniApp() {
                   </div>
                 ) : null}
               </div>
+            </article>
+          </section>
+        ) : section === "scan" ? (
+          <section className="broadcast-grid">
+            <form className="client-card client-form claim-scan-form" onSubmit={scanClaim}>
+              <div className="client-section-head">
+                <h2>QR выдача</h2>
+                <span>Проверка перед выдачей</span>
+              </div>
+              <button className="primary" type="button" onClick={openTelegramQrScanner}>Открыть сканер Telegram</button>
+              <label>
+                Сканировать QR
+                <input type="file" accept="image/*" capture="environment" onChange={(event) => decodeClaimImage(event.target.files?.[0])} />
+              </label>
+              <label>
+                QR-токен
+                <textarea value={claimToken} onChange={(event) => setClaimToken(event.target.value)} placeholder="Вставьте токен из QR, если камера не считала код" rows={5} />
+              </label>
+              <button className="primary" type="submit" disabled={isLoading || !claimToken.trim()}>Проверить QR</button>
+            </form>
+
+            <article className="client-card claim-result-card">
+              <div className="client-section-head">
+                <h2>Результат</h2>
+                <span>{claimResult?.status?.text || "Ожидает проверки"}</span>
+              </div>
+              {claimResult?.ok ? (
+                <>
+                  <div className={claimResult.status?.ok ? "claim-result-ok" : "claim-result-warn"}>
+                    <strong>{claimResult.status?.ok ? "Можно выдавать" : "Выдавать нельзя"}</strong>
+                    <span>{claimResult.status?.text}</span>
+                  </div>
+                  <div className="claim-result-client">
+                    <strong>{claimResult.client?.name || "Клиент не указан"}</strong>
+                    <span>{claimResult.client?.clientCode || claimResult.client?.code || "Код не указан"}</span>
+                  </div>
+                  <div className="claim-result-boxes">
+                    {(claimResult.boxes || []).map((box: any) => (
+                      <div key={box.id}>
+                        <strong>{box.track || box.id}</strong>
+                        <span>{box.status || "статус не указан"}{box.invoiceNumber ? ` - ${box.invoiceNumber}` : ""}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button className="primary" type="button" disabled={isLoading || !claimResult.status?.ok} onClick={issueClaim}>Выдать товар</button>
+                </>
+              ) : (
+                <div className="empty-state">
+                  <strong>QR еще не проверен</strong>
+                  <span>Считайте QR с телефона клиента или вставьте токен вручную.</span>
+                </div>
+              )}
             </article>
           </section>
         ) : (

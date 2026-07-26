@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld("cflowData", {
   issueClientCode: (payload) => ipcRenderer.invoke("cflow-data:issue-client-code", payload),
   createInvoice: (payload) => ipcRenderer.invoke("cflow-data:create-invoice", payload),
   confirmInvoice: (payload) => ipcRenderer.invoke("cflow-data:confirm-invoice", payload),
+  arriveInvoice: (payload) => ipcRenderer.invoke("cflow-data:arrive-invoice", payload),
   notifyInvoice: (payload) => ipcRenderer.invoke("cflow-data:notify-invoice", payload),
   createShipment: (payload) => ipcRenderer.invoke("cflow-data:create-shipment", payload),
   recordPayment: (payload) => ipcRenderer.invoke("cflow-data:record-payment", payload),

@@ -529,6 +529,64 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 }
 .neu-card:not(.pending-card):not(.client-badge):not(.shipment-card):not(.empty-shipments) { padding: 22px; }
 
+.claim-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px;
+}
+.claim-card.muted { opacity: .88; }
+.claim-card-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+.claim-card-head span {
+  display: block;
+  color: var(--muted-2);
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 4px;
+}
+.claim-card-head strong {
+  display: block;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.25;
+}
+.claim-card-head button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(145deg, #5A9CF5, var(--accent-strong));
+  color: #fff;
+  font-weight: 800;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+.claim-qr-box {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: inset 4px 4px 10px var(--neu-dark), inset -4px -4px 10px var(--neu-light);
+  padding: 16px;
+}
+.claim-qr-box img {
+  display: block;
+  width: min(100%, 260px);
+  height: auto;
+  border-radius: 12px;
+}
+.claim-qr-box p,
+.claim-card small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .shipment-card { display: grid; gap: 12px; padding: 18px 20px; }
 .shipment-top {
   display: grid;
@@ -752,7 +810,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .manage-code-box span, .manage-code-box small { color: var(--muted); font-size: 12px; line-height: 1.35; }
 .manage-section-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 12px;
   border-radius: 18px;
@@ -767,6 +825,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   background: transparent;
   color: var(--muted);
   font-weight: 800;
+  font-size: 12px;
+  padding: 0 6px;
 }
 .manage-section-tabs button.active {
   background: linear-gradient(135deg, var(--z-accent-light), var(--z-accent), var(--z-accent-dark));
@@ -777,6 +837,66 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 12px;
+}
+.claim-scan-form input[type="file"] {
+  width: 100%;
+  min-height: 46px;
+  border: 1.5px solid var(--z-border);
+  border-radius: 14px;
+  background: var(--z-bg-alt);
+  color: var(--z-ink);
+  font: inherit;
+  padding: 11px 12px;
+}
+.claim-scan-form textarea {
+  min-height: 120px;
+  resize: vertical;
+  line-height: 1.35;
+}
+.claim-result-card {
+  display: grid;
+  gap: 12px;
+}
+.claim-result-ok,
+.claim-result-warn,
+.claim-result-client,
+.claim-result-boxes div {
+  display: grid;
+  gap: 4px;
+  border-radius: 16px;
+  padding: 12px;
+}
+.claim-result-ok {
+  background: rgba(16, 185, 129, .12);
+  color: #047857;
+}
+.claim-result-warn {
+  background: rgba(245, 158, 11, .14);
+  color: #92400e;
+}
+.claim-result-ok strong,
+.claim-result-warn strong,
+.claim-result-client strong,
+.claim-result-boxes strong {
+  font-size: 14px;
+  line-height: 1.25;
+}
+.claim-result-ok span,
+.claim-result-warn span,
+.claim-result-client span,
+.claim-result-boxes span {
+  font-size: 12px;
+  line-height: 1.35;
+}
+.claim-result-client,
+.claim-result-boxes div {
+  background: var(--z-bg-alt);
+  color: var(--z-ink);
+  border: 1px solid var(--z-border);
+}
+.claim-result-boxes {
+  display: grid;
+  gap: 8px;
 }
 .broadcast-form select,
 .broadcast-form input[type="file"] {

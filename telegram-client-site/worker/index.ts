@@ -113,6 +113,42 @@ async function hmac(key: ArrayBuffer, value: string) {
   return crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(value));
 }
 
+function base64UrlEncode(value: string) {
+  return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlDecode(value: string) {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  return atob(padded);
+}
+
+async function signClaimPayload(env: Env, payload: string) {
+  const secret = env.CFLOW_ADMIN_TOKEN || env.CFLOW_TELEGRAM_BOT_TOKEN || "zabota-cargo-local";
+  const signature = await hmac(new TextEncoder().encode(secret), payload);
+  return hex(signature).slice(0, 32);
+}
+
+async function createClaimToken(env: Env, payload: Record<string, unknown>) {
+  const encoded = base64UrlEncode(JSON.stringify(payload));
+  const signature = await signClaimPayload(env, encoded);
+  return `ZBC:CLAIM:v1:${encoded}.${signature}`;
+}
+
+async function verifyClaimToken(env: Env, token: string) {
+  const cleanToken = String(token || "").trim();
+  const prefix = "ZBC:CLAIM:v1:";
+  if (!cleanToken.startsWith(prefix)) return { ok: false as const, error: "Это не QR Zabota Cargo" };
+  const [encoded, signature] = cleanToken.slice(prefix.length).split(".");
+  if (!encoded || !signature) return { ok: false as const, error: "QR поврежден" };
+  const expected = await signClaimPayload(env, encoded);
+  if (signature !== expected) return { ok: false as const, error: "QR недействителен или поврежден" };
+  try {
+    return { ok: true as const, payload: JSON.parse(base64UrlDecode(encoded)) as Record<string, unknown> };
+  } catch {
+    return { ok: false as const, error: "QR поврежден" };
+  }
+}
+
 function normalizeId(value = "") {
   return String(value || "").trim();
 }
@@ -907,11 +943,36 @@ function publicBox(box: CflowBox) {
     id: String(payload.id || box.id),
     track: String(payload.track || box.track || ""),
     weight: String(payload.weight || ""),
+    invoiceId: String(payload.invoiceId || ""),
+    invoiceNumber: String(payload.batch || ""),
     amount: amount ? `${amount} T` : "",
     clientRate: clientRate ? `${clientRate} T/кг` : "",
     status: String(payload.status || box.status || ""),
     stage: boxStage(String(payload.status || box.status || "")),
     updated_at: String(payload.updatedAt || box.updated_at),
+  };
+}
+
+function isBoxDelivered(box: Record<string, unknown>) {
+  return String(box.status || "").trim().toLowerCase().includes("выдан");
+}
+
+async function clientClaim(env: Env, client: CflowClient) {
+  const boxes = await getBoxes(env, client);
+  const activeBoxes = boxes.filter((box) => !isBoxDelivered(box as Record<string, unknown>));
+  const boxIds = activeBoxes.map((box) => String((box as { id?: string }).id || "")).filter(Boolean);
+  if (!boxIds.length) return null;
+  const token = await createClaimToken(env, {
+    clientId: client.id,
+    clientCode: normalizeGeneratedClientCode(client.client_code),
+    boxIds,
+    iat: Date.now(),
+  });
+  return {
+    token,
+    boxIds,
+    boxesCount: boxIds.length,
+    title: `${boxIds.length} посылок к получению`,
   };
 }
 
@@ -1246,6 +1307,48 @@ async function confirmInvoice(env: Env, invoiceId: string) {
   return nextInvoice;
 }
 
+async function arriveInvoice(env: Env, invoiceId: string, user = "Менеджер") {
+  const entity = await findInvoice(env, invoiceId);
+  const invoice = invoicePayload(entity);
+  if (!invoice) throw new Error("Накладная не найдена");
+  const now = nowIso();
+  const nextItems = [];
+  for (const item of invoiceItems(invoice)) {
+    const boxId = String(item.boxId || "");
+    if (boxId) {
+      const box = await findBox(env, boxId);
+      if (box) {
+        const payload = toDesktopBox(box);
+        await upsertBox(env, {
+          ...payload,
+          status: "В Астане на складе",
+          place: "Склад Астана",
+          updatedAt: now,
+          owner: user,
+        });
+      }
+    }
+    nextItems.push({ ...item, status: "В Астане на складе", arrivedAt: item.arrivedAt || now });
+  }
+  const nextInvoice = {
+    ...invoice,
+    status: "arrived",
+    arrivedAt: invoice.arrivedAt || now,
+    updatedAt: now,
+    items: nextItems,
+  };
+  await saveInvoicePayload(env, nextInvoice);
+  await upsertEntity(env, "activity", {
+    id: `ACT-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+    time: now,
+    title: "Накладная поступила",
+    text: `Накладная ${String(invoice.number || invoice.id || "")} поступила на склад Астаны`,
+    user,
+    updatedAt: now,
+  }, "ACT");
+  return nextInvoice;
+}
+
 function invoiceNotificationText(invoice: Record<string, unknown>, client: CflowClient, items: Record<string, unknown>[]) {
   const lines = items.map((item, index) => {
     const track = String(item.track || item.boxId || `место ${index + 1}`).trim();
@@ -1314,6 +1417,78 @@ async function notifyInvoiceClients(env: Env, request: Request, invoiceId: strin
   return { invoice: nextInvoice, sent, total: groups.size };
 }
 
+function canIssueBoxes(boxes: Record<string, unknown>[]) {
+  if (!boxes.length) return { ok: false, code: "not_found", text: "Товар по QR не найден" };
+  if (boxes.every((box) => isBoxDelivered(box))) return { ok: false, code: "delivered", text: "Товар уже выдан" };
+  const notReady = boxes.filter((box) => {
+    const status = String(box.status || "").toLowerCase();
+    return !status.includes("астан") && !status.includes("ждет выдачи") && !status.includes("готов");
+  });
+  if (notReady.length) return { ok: false, code: "not_arrived", text: "Товар еще не поступил на склад выдачи" };
+  return { ok: true, code: "ready", text: "Можно выдавать" };
+}
+
+async function boxesFromClaim(env: Env, token: string) {
+  const verified = await verifyClaimToken(env, token);
+  if (!verified.ok) return { ok: false as const, error: verified.error };
+  const boxIds = Array.isArray(verified.payload.boxIds) ? verified.payload.boxIds.map(String).filter(Boolean) : [];
+  const clientId = String(verified.payload.clientId || "");
+  if (!boxIds.length || !clientId) return { ok: false as const, error: "QR не содержит посылки" };
+  const allBoxes = await listBoxes(env);
+  const boxes = allBoxes.map(toDesktopBox).filter((box) => boxIds.includes(String(box.id || "")) && String(box.clientId || "") === clientId);
+  const client = await findClient(env, { id: clientId });
+  return { ok: true as const, client, boxes, payload: verified.payload };
+}
+
+async function scanClaim(env: Env, token: string, managerName = "Менеджер") {
+  const resolved = await boxesFromClaim(env, token);
+  if (!resolved.ok) return resolved;
+  const check = canIssueBoxes(resolved.boxes);
+  await upsertEntity(env, "activity", {
+    id: `ACT-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+    time: nowIso(),
+    title: "QR предъявлен",
+    text: `${resolved.client?.name || "Клиент"} предъявил QR: ${check.text}`,
+    user: managerName,
+    updatedAt: nowIso(),
+  }, "ACT");
+  return {
+    ok: true as const,
+    status: check,
+    client: resolved.client ? toDesktopClient(resolved.client) : null,
+    boxes: resolved.boxes,
+  };
+}
+
+async function issueClaim(env: Env, token: string, managerName = "Менеджер") {
+  const scan = await scanClaim(env, token, managerName);
+  if (!scan.ok) return scan;
+  if (!scan.status.ok) return { ...scan, ok: false as const, error: scan.status.text };
+  const now = nowIso();
+  const issuedBoxes = [];
+  for (const box of scan.boxes) {
+    const nextBox = {
+      ...box,
+      status: "Выдано",
+      place: "Выдано клиенту",
+      owner: managerName,
+      issuedAt: now,
+      updatedAt: now,
+    };
+    const saved = await upsertBox(env, nextBox);
+    if (saved) issuedBoxes.push(toDesktopBox(saved));
+  }
+  await upsertEntity(env, "activity", {
+    id: `ACT-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
+    time: now,
+    title: "Выдача по QR",
+    text: `${scan.client?.name || "Клиент"} получил посылки: ${issuedBoxes.map((box) => box.id).join(", ")}`,
+    user: managerName,
+    updatedAt: now,
+  }, "ACT");
+  return { ok: true as const, client: scan.client, boxes: issuedBoxes, data: await cloudSnapshot(env) };
+}
+
 async function handleClientTelegramWebhook(request: Request, env: Env) {
   if (env.CFLOW_ADMIN_TOKEN) {
     const secret = request.headers.get("x-telegram-bot-api-secret-token") || "";
@@ -1337,6 +1512,18 @@ async function handleMe(request: Request, env: Env) {
   const telegramId = String(verified.user.id);
   const client = await findClient(env, { telegramId });
   return json({ ok: true, ...publicClient(client, client ? await getBoxes(env, client) : []) });
+}
+
+async function handleClientClaim(request: Request, env: Env) {
+  const initData = new URL(request.url).searchParams.get("initData") || "";
+  const verified = await verifyTelegramInitData(initData, env.CFLOW_TELEGRAM_BOT_TOKEN);
+  if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
+  if (!verified.user?.id) return json({ ok: false, error: "Telegram пользователь не найден" }, { status: 401 });
+  const client = await findClient(env, { telegramId: String(verified.user.id) });
+  if (!client) return json({ ok: false, error: "Клиент не найден" }, { status: 404 });
+  const claim = await clientClaim(env, client);
+  if (!claim) return json({ ok: false, error: "Нет активных посылок для QR" }, { status: 404 });
+  return json({ ok: true, claim });
 }
 
 async function handleRegister(request: Request, env: Env) {
@@ -1488,6 +1675,17 @@ async function handleAdminNotifyInvoice(request: Request, env: Env) {
   }
 }
 
+async function handleAdminArriveInvoice(request: Request, env: Env) {
+  if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
+  try {
+    const body = await request.json() as { invoiceId?: string; id?: string; user?: string };
+    const invoice = await arriveInvoice(env, String(body.invoiceId || body.id || ""), String(body.user || "Desktop"));
+    return json({ ok: true, invoice, data: await cloudSnapshot(env) });
+  } catch (error) {
+    return json({ ok: false, error: error instanceof Error ? error.message : "Поступление не отмечено" }, { status: 400 });
+  }
+}
+
 async function handleManageMe(request: Request, env: Env) {
   const initData = new URL(request.url).searchParams.get("initData") || "";
   const verified = await verifyManageInitData(initData, env);
@@ -1578,6 +1776,34 @@ async function handleManageNotifyInvoice(request: Request, env: Env) {
   } catch (error) {
     return json({ ok: false, error: error instanceof Error ? error.message : "Уведомления не отправлены" }, { status: 400 });
   }
+}
+
+async function handleManageArriveInvoice(request: Request, env: Env) {
+  const body = await request.json() as { initData?: string; invoiceId?: string; id?: string };
+  const verified = await verifyManageInitData(body.initData || "", env);
+  if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
+  try {
+    const invoice = await arriveInvoice(env, String(body.invoiceId || body.id || ""), verified.user.username || "Manager");
+    return json({ ok: true, invoice, data: await cloudSnapshot(env) });
+  } catch (error) {
+    return json({ ok: false, error: error instanceof Error ? error.message : "Поступление не отмечено" }, { status: 400 });
+  }
+}
+
+async function handleManageScanClaim(request: Request, env: Env) {
+  const body = await request.json() as { initData?: string; token?: string };
+  const verified = await verifyManageInitData(body.initData || "", env);
+  if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
+  const result = await scanClaim(env, String(body.token || ""), verified.user.username || "Manager");
+  return json(result, { status: result.ok ? 200 : 400 });
+}
+
+async function handleManageIssueClaim(request: Request, env: Env) {
+  const body = await request.json() as { initData?: string; token?: string };
+  const verified = await verifyManageInitData(body.initData || "", env);
+  if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
+  const result = await issueClaim(env, String(body.token || ""), verified.user.username || "Manager");
+  return json(result, { status: result.ok ? 200 : 400 });
 }
 
 async function handleManageBroadcast(request: Request, env: Env) {
@@ -1677,6 +1903,7 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname === "/api/client/me" && request.method === "GET") return handleMe(request, env);
+    if (url.pathname === "/api/client/claim" && request.method === "GET") return handleClientClaim(request, env);
     if (url.pathname === "/api/client/register" && request.method === "POST") return handleRegister(request, env);
     if (url.pathname === "/api/admin/clients" && request.method === "GET") return handleAdminClients(request, env);
     if (url.pathname === "/api/admin/clients/upsert" && request.method === "POST") return handleAdminUpsertClient(request, env, ctx);
@@ -1687,6 +1914,7 @@ const worker = {
     if (url.pathname === "/api/admin/boxes/delete" && request.method === "POST") return handleAdminDeleteBox(request, env);
     if (url.pathname === "/api/admin/invoices/upsert" && request.method === "POST") return handleAdminUpsertInvoice(request, env);
     if (url.pathname === "/api/admin/invoices/confirm" && request.method === "POST") return handleAdminConfirmInvoice(request, env);
+    if (url.pathname === "/api/admin/invoices/arrive" && request.method === "POST") return handleAdminArriveInvoice(request, env);
     if (url.pathname === "/api/admin/invoices/notify" && request.method === "POST") return handleAdminNotifyInvoice(request, env);
     if (url.pathname === "/api/admin/clients/delete" && request.method === "POST") return handleAdminDeleteClient(request, env);
     if (url.pathname === "/api/admin/telegram-clients/approve" && request.method === "POST") return handleApprove(request, env, ctx);
@@ -1697,7 +1925,10 @@ const worker = {
     if (url.pathname === "/api/manage/clients/delete" && request.method === "POST") return handleManageDeleteClient(request, env);
     if (url.pathname === "/api/manage/invoices" && request.method === "GET") return handleManageInvoices(request, env);
     if (url.pathname === "/api/manage/invoices/confirm" && request.method === "POST") return handleManageConfirmInvoice(request, env);
+    if (url.pathname === "/api/manage/invoices/arrive" && request.method === "POST") return handleManageArriveInvoice(request, env);
     if (url.pathname === "/api/manage/invoices/notify" && request.method === "POST") return handleManageNotifyInvoice(request, env);
+    if (url.pathname === "/api/manage/claims/scan" && request.method === "POST") return handleManageScanClaim(request, env);
+    if (url.pathname === "/api/manage/claims/issue" && request.method === "POST") return handleManageIssueClaim(request, env);
     if (url.pathname === "/api/manage/broadcast" && request.method === "POST") return handleManageBroadcast(request, env);
     if (url.pathname === "/api/telegram/configure" && request.method === "POST") return handleConfigure(request, env);
     if (url.pathname === "/api/telegram/client-webhook" && request.method === "POST") return handleClientTelegramWebhook(request, env);

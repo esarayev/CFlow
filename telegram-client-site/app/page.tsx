@@ -11,6 +11,12 @@ type ClientProfile = {
   client: { name: string; phone: string; status: string; code: string; chinaAddress: string } | null;
   boxes: ClientBox[];
 };
+type ClientClaim = {
+  token: string;
+  boxesCount: number;
+  title: string;
+  boxIds: string[];
+};
 type AppTab = "code" | "statuses";
 
 declare global {
@@ -80,6 +86,7 @@ export default function ClientMiniApp() {
   const [telegramUser, setTelegramUser] = useState<TelegramUser | undefined>();
   const [initData, setInitData] = useState("");
   const [profile, setProfile] = useState<ClientProfile>(emptyProfile);
+  const [claim, setClaim] = useState<ClientClaim | null>(null);
   const [hasCheckedProfile, setHasCheckedProfile] = useState(false);
   const [activeTab, setActiveTab] = useState<AppTab>("code");
   const [showIntro, setShowIntro] = useState(true);
@@ -108,6 +115,20 @@ export default function ClientMiniApp() {
         setHasCheckedProfile(true);
         if (showLoading) setIsLoading(false);
       });
+  }, [initData]);
+
+  const refreshClaim = useCallback(() => {
+    if (!initData) return;
+    fetch(`/api/client/claim?initData=${encodeURIComponent(initData)}&ts=${Date.now()}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.ok) {
+          setClaim(data.claim || null);
+          return;
+        }
+        setClaim(null);
+      })
+      .catch(() => setClaim(null));
   }, [initData]);
 
   useEffect(() => {
@@ -173,6 +194,16 @@ export default function ClientMiniApp() {
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [initData, refreshProfile]);
+
+  useEffect(() => {
+    if (!initData || !profile.approved) {
+      setClaim(null);
+      return;
+    }
+    refreshClaim();
+    const timer = window.setInterval(refreshClaim, profilePollMs);
+    return () => window.clearInterval(timer);
+  }, [initData, profile.approved, profile.boxes.length, refreshClaim]);
 
   useEffect(() => {
     const initialSignature = currentAssetSignature();
@@ -290,7 +321,7 @@ export default function ClientMiniApp() {
             onCopyCode={() => copyText(client?.code || "", "Код клиента скопирован")}
             onCopyAddress={() => copyText(client?.chinaAddress || "", "Адрес склада скопирован")}
           />
-        ) : <StatusesScreen boxes={profile.boxes} />}
+        ) : <StatusesScreen boxes={profile.boxes} claim={claim} onRefreshClaim={refreshClaim} />}
       </section>
       <BottomNav activeTab={activeTab} onTab={setActiveTab} />
     </main>
@@ -493,8 +524,9 @@ function CopyIcon() {
   );
 }
 
-function StatusesScreen({ boxes }: { boxes: ClientBox[] }) {
+function StatusesScreen({ boxes, claim, onRefreshClaim }: { boxes: ClientBox[]; claim: ClientClaim | null; onRefreshClaim: () => void }) {
   const [filter, setFilter] = useState<"all" | "active" | "delivered">("all");
+  const [showQr, setShowQr] = useState(false);
   const filteredBoxes = useMemo(() => {
     if (filter === "all") return boxes;
     return boxes.filter((box) => {
@@ -505,6 +537,40 @@ function StatusesScreen({ boxes }: { boxes: ClientBox[] }) {
 
   return (
     <section className="neu-stack">
+      {claim ? (
+        <article className="neu-card claim-card">
+          <div className="claim-card-head">
+            <div>
+              <span>Выдача товара</span>
+              <strong>{claim.title}</strong>
+            </div>
+            <button type="button" onClick={() => setShowQr((current) => !current)}>
+              {showQr ? "Скрыть QR" : "Предъявить QR"}
+            </button>
+          </div>
+          {showQr ? (
+            <div className="claim-qr-box">
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&margin=12&data=${encodeURIComponent(claim.token)}`}
+                alt="QR для получения товара"
+              />
+              <p>Покажите этот QR менеджеру при получении товара на складе.</p>
+            </div>
+          ) : null}
+          <small>QR активен для посылок, которые уже готовы к выдаче. Если товар еще в пути, менеджер увидит это при проверке.</small>
+        </article>
+      ) : boxes.length ? (
+        <article className="neu-card claim-card muted">
+          <div className="claim-card-head">
+            <div>
+              <span>Выдача товара</span>
+              <strong>QR появится после поступления на склад</strong>
+            </div>
+            <button type="button" onClick={onRefreshClaim}>Обновить</button>
+          </div>
+          <small>Когда накладную отметят как поступившую в Астану, здесь появится QR для получения.</small>
+        </article>
+      ) : null}
       <div className="neu-filter" role="tablist" aria-label="Фильтр посылок">
         <button type="button" className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Все</button>
         <button type="button" className={filter === "active" ? "active" : ""} onClick={() => setFilter("active")}>В процессе</button>

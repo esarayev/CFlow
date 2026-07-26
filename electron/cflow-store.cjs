@@ -1055,6 +1055,43 @@ async function notifyInvoiceLocal(app, input) {
   return { ...snapshot, sent: cloud.sent || 0, total: cloud.total || 0 };
 }
 
+async function arriveInvoiceLocal(app, input) {
+  const data = readStore(app);
+  const invoiceId = String(input.invoiceId || input.id || "").trim();
+  const invoice = data.invoices.find((item) => item.id === invoiceId);
+  if (!invoice) return { ok: false, error: "Накладная не найдена" };
+  const now = nowIso();
+  invoice.items = (invoice.items || []).map((item) => {
+    if (item.boxId) {
+      const box = data.boxes.find((boxItem) => boxItem.id === item.boxId);
+      if (box) {
+        box.status = "В Астане на складе";
+        box.place = "Склад Астана";
+        box.updatedAt = now;
+        box.owner = input.user || "Оператор";
+      }
+    }
+    return { ...item, status: "В Астане на складе", arrivedAt: item.arrivedAt || now };
+  });
+  invoice.status = "arrived";
+  invoice.arrivedAt = invoice.arrivedAt || now;
+  invoice.updatedAt = now;
+  logActivity(data, "Накладная поступила", `Накладная ${invoice.number} поступила на склад Астаны`, input.user || "Оператор");
+  writeStore(app, data);
+  const cloud = await cloudRequest("/api/admin/invoices/arrive", {
+    method: "POST",
+    body: JSON.stringify({ invoiceId, user: input.user || "Оператор" }),
+  });
+  if (cloud?.data) {
+    mergeById(data.invoices, cloud.data.invoices);
+    mergeById(data.boxes, cloud.data.boxes);
+    writeStore(app, data);
+  } else {
+    await pushCloudSnapshot(data);
+  }
+  return publicSnapshot(app);
+}
+
 function createShipment(app, input) {
   const data = readStore(app);
   const title = String(input.title || "").trim();
@@ -1182,6 +1219,7 @@ function registerCflowIpc(ipcMain, app) {
   ipcMain.handle("cflow-data:issue-client-code", (_event, payload) => withPermission(app, payload, "clients", (input) => issueClientCode(app, input)));
   ipcMain.handle("cflow-data:create-invoice", (_event, payload) => withPermission(app, payload, "warehouse", (input) => createInvoice(app, input)));
   ipcMain.handle("cflow-data:confirm-invoice", (_event, payload) => withPermission(app, payload, "warehouse", (input) => confirmInvoiceLocal(app, input)));
+  ipcMain.handle("cflow-data:arrive-invoice", (_event, payload) => withPermission(app, payload, "warehouse", (input) => arriveInvoiceLocal(app, input)));
   ipcMain.handle("cflow-data:notify-invoice", (_event, payload) => withPermission(app, payload, "warehouse", (input) => notifyInvoiceLocal(app, input)));
   ipcMain.handle("cflow-data:create-shipment", (_event, payload) => withPermission(app, payload, "warehouse", (input) => createShipment(app, input)));
   ipcMain.handle("cflow-data:record-payment", (_event, payload) => withPermission(app, payload, "finance", (input) => recordPayment(app, input)));

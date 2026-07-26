@@ -218,6 +218,31 @@ async function cloudRequest(pathname, options = {}) {
   }
 }
 
+async function fetchCurrencyRates() {
+  const result = await httpJsonRequest("https://open.er-api.com/v6/latest/USD");
+  if (!result?.result || result.result !== "success" || !result.rates) {
+    return { ok: false, error: result?.error || "currency_rates_unavailable" };
+  }
+
+  const usdKzt = Number(result.rates.KZT);
+  const usdCny = Number(result.rates.CNY);
+  if (!Number.isFinite(usdKzt) || !Number.isFinite(usdCny) || usdCny <= 0) {
+    return { ok: false, error: "currency_rates_bad_payload" };
+  }
+
+  return {
+    ok: true,
+    source: "open.er-api.com",
+    base: "USD",
+    usdKzt,
+    usdCny,
+    cnyKzt: usdKzt / usdCny,
+    fetchedAt: nowIso(),
+    updatedAt: String(result.time_last_update_utc || ""),
+    nextUpdateAt: String(result.time_next_update_utc || ""),
+  };
+}
+
 function normalizeCloudClient(client) {
   const fallbackName = cleanName(client.telegram || client.telegramUsername) || cleanName(client.phone) || "Клиент";
   return {
@@ -1009,6 +1034,7 @@ function registerCflowIpc(ipcMain, app) {
   ipcMain.handle("cflow-data:record-payment", (_event, payload) => withPermission(app, payload, "finance", (input) => recordPayment(app, input)));
   ipcMain.handle("cflow-data:delete-box", (_event, payload) => withPermission(app, payload, "all", (input) => deleteBox(app, input)));
   ipcMain.handle("cflow-data:delete-client", (_event, payload) => withPermission(app, payload, "all", (input) => deleteClient(app, input)));
+  ipcMain.handle("cflow-data:currency-rates", (_event, payload) => withPermission(app, payload, "search", () => fetchCurrencyRates()));
 }
 
 module.exports = {

@@ -29,4 +29,5 @@ contextBridge.exposeInMainWorld("cflowData", {
   recordPayment: (payload) => ipcRenderer.invoke("cflow-data:record-payment", payload),
   deleteBox: (payload) => ipcRenderer.invoke("cflow-data:delete-box", payload),
   deleteClient: (payload) => ipcRenderer.invoke("cflow-data:delete-client", payload),
+  currencyRates: (payload) => ipcRenderer.invoke("cflow-data:currency-rates", payload),
 });

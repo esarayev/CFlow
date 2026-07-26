@@ -128,6 +128,19 @@ type ApiResult = {
   sync?: { status: string; pulledClients?: number };
 };
 
+type CurrencyRatesResult = {
+  ok: boolean;
+  error?: string;
+  source?: string;
+  base?: string;
+  usdKzt?: number;
+  usdCny?: number;
+  cnyKzt?: number;
+  fetchedAt?: string;
+  updatedAt?: string;
+  nextUpdateAt?: string;
+};
+
 type ApplyResultOptions = {
   silentSyncError?: boolean;
 };
@@ -191,6 +204,7 @@ declare global {
       recordPayment: (payload: Record<string, string>) => Promise<ApiResult>;
       deleteBox: (payload: Record<string, string>) => Promise<ApiResult>;
       deleteClient: (payload: Record<string, string>) => Promise<ApiResult>;
+      currencyRates: (payload: Record<string, string>) => Promise<CurrencyRatesResult>;
     };
   }
 }
@@ -435,6 +449,13 @@ function money(value: number) {
   return `${new Intl.NumberFormat("ru-RU").format(value)} T`;
 }
 
+function formatRate(value: number) {
+  return new Intl.NumberFormat("ru-RU", {
+    minimumFractionDigits: value >= 100 ? 2 : 3,
+    maximumFractionDigits: value >= 100 ? 2 : 3,
+  }).format(value);
+}
+
 const boxStatuses = ["Принято", "На складе", "В отправке", "В пути", "На таможне", "Прибыло", "Ждет выдачи", "Выдано", "Без клиента", "Проблема", "Задержано", "Повреждено", "Возврат", "Потеряно"];
 
 function numericWeight(value?: string) {
@@ -497,6 +518,8 @@ export default function Home() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [syncStatus, setSyncStatus] = useState<{ status: string; pulledClients?: number } | null>(null);
+  const [currencyRates, setCurrencyRates] = useState<CurrencyRatesResult | null>(null);
+  const [ratesLoading, setRatesLoading] = useState(false);
   const [sessionUser, setSessionUser] = useState<SessionUser | null>(null);
   const [sessionToken, setSessionToken] = useState("");
   const [detailModal, setDetailModal] = useState<DetailModalState>(null);
@@ -537,6 +560,15 @@ export default function Home() {
   useEffect(() => {
     if (!sessionUser || !sessionToken || !window.cflowData) return;
     window.cflowData.snapshot(securePayload()).then(applyResult).catch(() => setError("Не удалось загрузить базу CFlow"));
+  }, [sessionUser, sessionToken]);
+
+  useEffect(() => {
+    if (!sessionUser || !sessionToken || !window.cflowData) return;
+    void loadCurrencyRates({ silent: true });
+    const intervalId = window.setInterval(() => {
+      void loadCurrencyRates({ silent: true });
+    }, 30 * 60 * 1000);
+    return () => window.clearInterval(intervalId);
   }, [sessionUser, sessionToken]);
 
   useEffect(() => {
@@ -740,6 +772,29 @@ export default function Home() {
       if (!options.silent) setError("Не удалось синхронизировать данные с облаком");
     } finally {
       syncInFlightRef.current = false;
+    }
+  }
+
+  async function loadCurrencyRates(options: { silent?: boolean } = {}) {
+    if (!window.cflowData) {
+      if (!options.silent) setError("Курсы валют доступны только в десктопном приложении.");
+      return;
+    }
+
+    setRatesLoading(true);
+    try {
+      const result = await window.cflowData.currencyRates(securePayload());
+      setCurrencyRates(result);
+      if (!result.ok && !options.silent) {
+        setError("Не удалось загрузить курсы валют онлайн");
+      } else if (result.ok && !options.silent) {
+        setNotice("Курсы валют обновлены");
+      }
+    } catch {
+      setCurrencyRates({ ok: false, error: "currency_rates_failed" });
+      if (!options.silent) setError("Не удалось загрузить курсы валют онлайн");
+    } finally {
+      setRatesLoading(false);
     }
   }
 
@@ -1184,6 +1239,7 @@ export default function Home() {
                 </article>
               ))}
             </section>
+            <CurrencyRatesPanel rates={currencyRates} loading={ratesLoading} onRefresh={() => void loadCurrencyRates()} />
             <div className="split-panels">
               <BoxesPanel boxes={filteredBoxes.slice(0, 6)} selectedId={selectedId} onOpenBox={openBoxDetail} />
               <ActivityPanel activity={data.activity} />
@@ -1485,6 +1541,51 @@ function FinancePanel({ finances }: { finances: FinanceData }) {
         <div><span>Долг клиентов</span><strong>{money(finances.debt)}</strong></div>
         <div><span>Ожидаемая прибыль</span><strong>{money(finances.profitToday || 0)}</strong></div>
       </div>
+    </article>
+  );
+}
+
+function CurrencyRatesPanel({
+  rates,
+  loading,
+  onRefresh,
+}: {
+  rates: CurrencyRatesResult | null;
+  loading: boolean;
+  onRefresh: () => void;
+}) {
+  const usdKzt = rates?.ok && rates.usdKzt ? rates.usdKzt : 0;
+  const cnyKzt = rates?.ok && rates.cnyKzt ? rates.cnyKzt : 0;
+  const usdCny = rates?.ok && rates.usdCny ? rates.usdCny : 0;
+  const updatedAt = rates?.updatedAt ? new Date(rates.updatedAt) : null;
+  const updatedLabel = updatedAt && Number.isFinite(updatedAt.getTime())
+    ? new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(updatedAt)
+    : "ожидаем обновление";
+
+  return (
+    <article className="panel currency-panel">
+      <div className="panel-head compact">
+        <div>
+          <span className="eyebrow">Онлайн курсы</span>
+          <h2>Валюты</h2>
+        </div>
+        <button type="button" onClick={onRefresh} disabled={loading}>{loading ? "Обновляем..." : "Обновить"}</button>
+      </div>
+      {rates?.ok ? (
+        <>
+          <div className="currency-grid">
+            <div><span>1 USD</span><strong>{formatRate(usdKzt)} ₸</strong><small>доллар → тенге</small></div>
+            <div><span>1 CNY</span><strong>{formatRate(cnyKzt)} ₸</strong><small>юань → тенге</small></div>
+            <div><span>1 USD</span><strong>{formatRate(usdCny)} ¥</strong><small>доллар → юань</small></div>
+          </div>
+          <p className="currency-meta">Источник: {rates.source || "open.er-api.com"} · обновлено {updatedLabel}</p>
+        </>
+      ) : (
+        <div className="currency-empty">
+          <strong>Курсы пока не загружены</strong>
+          <p>Проверьте интернет или нажмите “Обновить”. Финансовые данные приложения от этого не меняются.</p>
+        </div>
+      )}
     </article>
   );
 }

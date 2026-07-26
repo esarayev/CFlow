@@ -547,6 +547,72 @@ h2 {
   gap: 18px;
 }
 
+.currency-panel {
+  border-color: rgba(60, 83, 139, .18);
+  background: linear-gradient(135deg, #ffffff 0%, #f7f9fd 100%);
+}
+
+.currency-panel .panel-head button {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.currency-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.currency-grid div,
+.currency-empty {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 14px;
+}
+
+.currency-grid span,
+.currency-grid small,
+.currency-meta,
+.currency-empty p {
+  color: var(--muted);
+}
+
+.currency-grid span {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 7px;
+}
+
+.currency-grid strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--font-mono), monospace;
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.currency-grid small {
+  display: block;
+  font-size: 12px;
+  margin-top: 7px;
+}
+
+.currency-meta {
+  margin: 12px 0 0;
+  font-size: 12px;
+}
+
+.currency-empty {
+  display: grid;
+  gap: 6px;
+}
+
+.currency-empty strong {
+  color: var(--ink);
+}
+
 .warehouse-grid,
 .activity,
 .user-list,

@@ -1562,22 +1562,22 @@ function CurrencyRatesPanel({
   const usdKzt = rates?.ok && rates.usdKzt ? rates.usdKzt : 0;
   const cnyKzt = rates?.ok && rates.cnyKzt ? rates.cnyKzt : 0;
   const usdCny = rates?.ok && rates.usdCny ? rates.usdCny : 0;
-  const pairs: Array<{ id: CurrencyPairId; label: string; from: string; to: string; flags: string; value: number; suffix: string }> = [
-    { id: "USD_KZT", label: "Доллар → тенге", from: "USD", to: "KZT", flags: "🇺🇸 🇰🇿", value: usdKzt, suffix: "₸" },
-    { id: "CNY_KZT", label: "Юань → тенге", from: "CNY", to: "KZT", flags: "🇨🇳 🇰🇿", value: cnyKzt, suffix: "₸" },
-    { id: "USD_CNY", label: "Доллар → юань", from: "USD", to: "CNY", flags: "🇺🇸 🇨🇳", value: usdCny, suffix: "¥" },
-    { id: "KZT_USD", label: "Тенге → доллар", from: "KZT", to: "USD", flags: "🇰🇿 🇺🇸", value: usdKzt ? 1 / usdKzt : 0, suffix: "$" },
-    { id: "KZT_CNY", label: "Тенге → юань", from: "KZT", to: "CNY", flags: "🇰🇿 🇨🇳", value: cnyKzt ? 1 / cnyKzt : 0, suffix: "¥" },
-    { id: "CNY_USD", label: "Юань → доллар", from: "CNY", to: "USD", flags: "🇨🇳 🇺🇸", value: usdCny ? 1 / usdCny : 0, suffix: "$" },
+  const pairs: Array<{ id: CurrencyPairId; label: string; from: CurrencyCode; to: CurrencyCode; value: number; suffix: string }> = [
+    { id: "USD_KZT", label: "Доллар → тенге", from: "USD", to: "KZT", value: usdKzt, suffix: "₸" },
+    { id: "CNY_KZT", label: "Юань → тенге", from: "CNY", to: "KZT", value: cnyKzt, suffix: "₸" },
+    { id: "USD_CNY", label: "Доллар → юань", from: "USD", to: "CNY", value: usdCny, suffix: "¥" },
+    { id: "KZT_USD", label: "Тенге → доллар", from: "KZT", to: "USD", value: usdKzt ? 1 / usdKzt : 0, suffix: "$" },
+    { id: "KZT_CNY", label: "Тенге → юань", from: "KZT", to: "CNY", value: cnyKzt ? 1 / cnyKzt : 0, suffix: "¥" },
+    { id: "CNY_USD", label: "Юань → доллар", from: "CNY", to: "USD", value: usdCny ? 1 / usdCny : 0, suffix: "$" },
   ];
-  const currencyMeta: Record<CurrencyCode, { flag: string; symbol: string; tone: string; name: string }> = {
-    USD: { flag: "🇺🇸", symbol: "$", tone: "usd", name: "Dollar" },
-    KZT: { flag: "🇰🇿", symbol: "₸", tone: "kzt", name: "Tenge" },
-    CNY: { flag: "🇨🇳", symbol: "¥", tone: "cny", name: "Yuan" },
+  const currencyMeta: Record<CurrencyCode, { symbol: string; tone: string; name: string }> = {
+    USD: { symbol: "$", tone: "usd", name: "Доллар США" },
+    KZT: { symbol: "₸", tone: "kzt", name: "Казахстанский тенге" },
+    CNY: { symbol: "¥", tone: "cny", name: "Китайский юань" },
   };
   const selectedPair = pairs.find((item) => item.id === pair) || pairs[0];
-  const fromMeta = currencyMeta[selectedPair.from as CurrencyCode];
-  const toMeta = currencyMeta[selectedPair.to as CurrencyCode];
+  const fromMeta = currencyMeta[selectedPair.from];
+  const toMeta = currencyMeta[selectedPair.to];
   const updatedAt = rates?.updatedAt ? new Date(rates.updatedAt) : null;
   const updatedLabel = updatedAt && Number.isFinite(updatedAt.getTime())
     ? new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(updatedAt)
@@ -1598,7 +1598,7 @@ function CurrencyRatesPanel({
             <span>Пара</span>
             <select value={pair} onChange={(event) => setPair(event.target.value as CurrencyPairId)}>
               {pairs.map((item) => (
-                <option key={item.id} value={item.id}>{item.flags} {item.label}</option>
+                <option key={item.id} value={item.id}>{item.from}/{item.to}</option>
               ))}
             </select>
           </label>
@@ -1623,13 +1623,46 @@ function CurrencyRatesPanel({
   );
 }
 
-function CurrencyChip({ code, meta }: { code: string; meta: { flag: string; symbol: string; tone: string; name: string } }) {
+function CurrencyChip({ code, meta }: { code: CurrencyCode; meta: { symbol: string; tone: string; name: string } }) {
   return (
     <span className={`currency-chip ${meta.tone}`} title={meta.name}>
-      <b>{meta.flag}</b>
+      <CurrencyFlag code={code} />
       <i>{meta.symbol}</i>
       {code}
     </span>
+  );
+}
+
+function CurrencyFlag({ code }: { code: CurrencyCode }) {
+  if (code === "KZT") {
+    return (
+      <svg className="currency-flag" viewBox="0 0 30 20" aria-label="Флаг Казахстана" role="img">
+        <rect width="30" height="20" rx="3" fill="#00AFCA" />
+        <circle cx="15" cy="10" r="3.3" fill="#F7C948" />
+        <path d="M15 4.3l.7 2.2 2.3-1.1-1.1 2.3 2.2.7-2.2.7 1.1 2.3-2.3-1.1-.7 2.2-.7-2.2-2.3 1.1 1.1-2.3-2.2-.7 2.2-.7-1.1-2.3 2.3 1.1.7-2.2z" fill="#F7C948" />
+        <path d="M5 3v14" stroke="#F7C948" strokeWidth="1.2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (code === "CNY") {
+    return (
+      <svg className="currency-flag" viewBox="0 0 30 20" aria-label="Флаг Китая" role="img">
+        <rect width="30" height="20" rx="3" fill="#DE2910" />
+        <path d="M7.2 3.5l.8 2.2 2.3.1-1.7 1.4.6 2.2-2-1.2-1.9 1.2.6-2.2-1.7-1.4 2.3-.1.7-2.2z" fill="#FFDE00" />
+        <circle cx="13.7" cy="4.4" r="1" fill="#FFDE00" />
+        <circle cx="16.1" cy="6.9" r="1" fill="#FFDE00" />
+        <circle cx="15.9" cy="10.2" r="1" fill="#FFDE00" />
+        <circle cx="13.6" cy="12.6" r="1" fill="#FFDE00" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="currency-flag" viewBox="0 0 30 20" aria-label="Флаг США" role="img">
+      <rect width="30" height="20" rx="3" fill="#B22234" />
+      <path d="M0 2h30v2H0zm0 4h30v2H0zm0 4h30v2H0zm0 4h30v2H0zm0 4h30v2H0z" fill="#fff" />
+      <path d="M0 0h13v10H0z" fill="#3C3B6E" />
+      <path d="M2 2h1v1H2zm3 0h1v1H5zm3 0h1v1H8zm3 0h1v1h-1zM2 5h1v1H2zm3 0h1v1H5zm3 0h1v1H8zm3 0h1v1h-1zM2 8h1v1H2zm3 0h1v1H5zm3 0h1v1H8zm3 0h1v1h-1z" fill="#fff" />
+    </svg>
   );
 }
 

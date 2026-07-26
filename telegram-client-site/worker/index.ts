@@ -1679,8 +1679,20 @@ async function handleClientTelegramWebhook(request: Request, env: Env) {
   return json({ ok: true });
 }
 
+async function clientInitData(request: Request) {
+  if (request.method === "POST") {
+    try {
+      const body = await request.json() as { initData?: string };
+      return body.initData || "";
+    } catch {
+      return "";
+    }
+  }
+  return new URL(request.url).searchParams.get("initData") || "";
+}
+
 async function handleMe(request: Request, env: Env) {
-  const initData = new URL(request.url).searchParams.get("initData") || "";
+  const initData = await clientInitData(request);
   const verified = await verifyTelegramInitData(initData, env.CFLOW_TELEGRAM_BOT_TOKEN);
   if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
   if (!verified.user?.id) return json({ ok: false, error: "Telegram пользователь не найден" }, { status: 401 });
@@ -1692,7 +1704,7 @@ async function handleMe(request: Request, env: Env) {
 }
 
 async function handleClientClaim(request: Request, env: Env) {
-  const initData = new URL(request.url).searchParams.get("initData") || "";
+  const initData = await clientInitData(request);
   const verified = await verifyTelegramInitData(initData, env.CFLOW_TELEGRAM_BOT_TOKEN);
   if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
   if (!verified.user?.id) return json({ ok: false, error: "Telegram пользователь не найден" }, { status: 401 });
@@ -2093,8 +2105,8 @@ async function handleConfigure(request: Request, env: Env) {
 const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/api/client/me" && request.method === "GET") return handleMe(request, env);
-    if (url.pathname === "/api/client/claim" && request.method === "GET") return handleClientClaim(request, env);
+    if (url.pathname === "/api/client/me" && (request.method === "GET" || request.method === "POST")) return handleMe(request, env);
+    if (url.pathname === "/api/client/claim" && (request.method === "GET" || request.method === "POST")) return handleClientClaim(request, env);
     if (url.pathname === "/api/client/register" && request.method === "POST") return handleRegister(request, env);
     if (url.pathname === "/api/admin/clients" && request.method === "GET") return handleAdminClients(request, env);
     if (url.pathname === "/api/admin/clients/upsert" && request.method === "POST") return handleAdminUpsertClient(request, env, ctx);

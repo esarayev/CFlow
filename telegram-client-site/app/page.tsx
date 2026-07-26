@@ -107,7 +107,12 @@ export default function ClientMiniApp() {
   const refreshProfile = useCallback((showLoading = false) => {
     if (!initData) return;
     if (showLoading) setIsLoading(true);
-    fetch(`/api/client/me?initData=${encodeURIComponent(initData)}&ts=${Date.now()}`, { cache: "no-store" })
+    fetch(`/api/client/me?ts=${Date.now()}`, {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ initData }),
+      cache: "no-store",
+    })
       .then((response) => response.json())
       .then((data) => {
         if (data.ok) {
@@ -131,7 +136,12 @@ export default function ClientMiniApp() {
 
   const refreshClaim = useCallback(() => {
     if (!initData) return;
-    fetch(`/api/client/claim?initData=${encodeURIComponent(initData)}&ts=${Date.now()}`, { cache: "no-store" })
+    fetch(`/api/client/claim?ts=${Date.now()}`, {
+      method: "POST",
+      headers: { "content-type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ initData }),
+      cache: "no-store",
+    })
       .then((response) => response.json())
       .then((data) => {
         if (data.ok) {

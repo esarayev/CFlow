@@ -1,6 +1,8 @@
-const fs = require("node:fs");
+﻿const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const https = require("node:https");
+const { execFileSync } = require("node:child_process");
 
 const ownerUsername = "esaraev85";
 const ownerPassword = "Q1w2e3r4!";
@@ -9,6 +11,7 @@ const ownerUser = {
   id: "USR-001",
   name: "Администратор",
   username: ownerUsername,
+  telegramUsername: ownerUsername,
   role: "Руководитель",
   permissions: ["all"],
   status: "active",
@@ -16,6 +19,115 @@ const ownerUser = {
 
 const activeSessions = new Map();
 const sessionTtlMs = 12 * 60 * 60 * 1000;
+
+function readWindowsUserEnv(name) {
+  if (process.platform !== "win32") return "";
+  try {
+    const output = execFileSync("reg", ["query", "HKCU\\Environment", "/v", name], {
+      encoding: "utf8",
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    const line = output.split(/\r?\n/).find((item) => item.includes(name));
+    return String(line || "").trim().split(/\s{2,}/).pop() || "";
+  } catch {
+    return "";
+  }
+}
+
+function cloudConfig() {
+  const adminToken = String(process.env.CFLOW_ADMIN_TOKEN || readWindowsUserEnv("CFLOW_ADMIN_TOKEN") || "");
+  return {
+    apiUrl: String(process.env.CFLOW_CLOUD_API_URL || process.env.CFLOW_API_URL || readWindowsUserEnv("CFLOW_CLOUD_API_URL") || "https://cflow-miniapp.yegor-sarayev.workers.dev").replace(/\/+$/, ""),
+    adminToken,
+  };
+}
+
+function httpJsonRequest(targetUrl, options = {}) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const body = options.body || "";
+    const request = https.request(targetUrl, {
+      method: options.method || "GET",
+      headers: {
+        ...(options.headers || {}),
+        ...(body ? { "content-length": Buffer.byteLength(body) } : {}),
+      },
+    }, (response) => {
+      let raw = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        raw += chunk;
+      });
+      response.on("end", () => {
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          finish({ ok: false, error: `cloud_http_${response.statusCode}` });
+          return;
+        }
+        try {
+          finish(JSON.parse(raw));
+        } catch {
+          finish({ ok: false, error: "cloud_bad_json" });
+        }
+      });
+    });
+    request.setTimeout(15000, () => {
+      request.destroy();
+      finish({ ok: false, error: "cloud_timeout" });
+    });
+    request.on("error", () => finish({ ok: false, error: "cloud_request_failed" }));
+    if (body) request.write(body);
+    request.end();
+  });
+}
+
+async function cloudRequest(pathname, options = {}) {
+  const { apiUrl, adminToken } = cloudConfig();
+  if (!apiUrl || !adminToken) return { ok: false, error: !adminToken ? "cloud_token_missing" : "cloud_unavailable" };
+  try {
+    return await httpJsonRequest(`${apiUrl}${pathname}`, {
+      ...options,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        authorization: `Bearer ${adminToken}`,
+        ...(options.headers || {}),
+      },
+    });
+  } catch {
+    return { ok: false, error: "cloud_request_failed" };
+  }
+}
+
+function normalizeTelegramUsername(value) {
+  return String(value || "").trim().replace(/^@/, "").toLowerCase();
+}
+
+function cloudStaffUser(user) {
+  const normalized = normalizeUser(user);
+  return {
+    id: normalized.id,
+    name: normalized.name,
+    username: normalized.username,
+    telegramUsername: normalizeTelegramUsername(normalized.telegramUsername || normalized.telegram || ""),
+    role: normalized.role,
+    permissions: normalized.permissions || [],
+    status: normalized.status,
+    updatedAt: normalized.updatedAt || new Date().toISOString(),
+  };
+}
+
+function syncUsersToCloud(users) {
+  const staff = users.map(cloudStaffUser);
+  return cloudRequest("/api/admin/staff/sync", {
+    method: "POST",
+    body: JSON.stringify({ staff }),
+  });
+}
 
 function dataDir(app) {
   return path.join(app.getPath("appData"), "CFlow");
@@ -90,6 +202,8 @@ function normalizeUser(user) {
   const normalized = { ...user };
   normalized.status = normalizeStatus(normalized.status);
   normalized.role = normalizeRole(normalized.role);
+  normalized.telegramUsername = normalizeTelegramUsername(normalized.telegramUsername || normalized.telegram || "");
+  normalized.updatedAt = normalized.updatedAt || new Date().toISOString();
 
   if (normalized.username === ownerUsername) {
     normalized.id = ownerUser.id;
@@ -162,7 +276,9 @@ function ensureStore(app) {
 
 function writeUsers(app, users) {
   ensureStore(app);
-  fs.writeFileSync(storePath(app), JSON.stringify({ users: users.map(normalizeUser) }, null, 2), "utf8");
+  const normalizedUsers = users.map(normalizeUser);
+  fs.writeFileSync(storePath(app), JSON.stringify({ users: normalizedUsers }, null, 2), "utf8");
+  syncUsersToCloud(normalizedUsers).catch(() => undefined);
 }
 
 function readStoreJson(app) {
@@ -189,7 +305,9 @@ function readUsers(app) {
 }
 
 function listUsers(app) {
-  return readUsers(app).map(publicUser);
+  const users = readUsers(app);
+  syncUsersToCloud(users).catch(() => undefined);
+  return users.map(publicUser);
 }
 
 function authenticate(app, username, password) {
@@ -226,9 +344,11 @@ function createUser(app, input) {
     id: `USR-${String(users.length + 1).padStart(3, "0")}`,
     name,
     username,
+    telegramUsername: normalizeTelegramUsername(input.telegramUsername || input.telegram || ""),
     role,
     permissions: rolePermissions(role),
     status: "active",
+    updatedAt: new Date().toISOString(),
     passwordHash: hashPassword(password),
   };
 
@@ -266,9 +386,11 @@ function updateUser(app, input) {
     id: isOwner ? ownerUser.id : current.id,
     name,
     username,
+    telegramUsername: isOwner ? normalizeTelegramUsername(current.telegramUsername || current.telegram || ownerUsername) : normalizeTelegramUsername(input.telegramUsername || input.telegram || current.telegramUsername || ""),
     role,
     permissions: rolePermissions(role),
     status: isOwner ? "active" : normalizeStatus(current.status),
+    updatedAt: new Date().toISOString(),
     passwordHash: password ? hashPassword(password) : current.passwordHash,
   };
 

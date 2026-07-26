@@ -53,6 +53,18 @@ type CflowStoredEntity = {
   payload: string;
 };
 
+type CflowStaff = {
+  id: string;
+  name: string;
+  username: string;
+  telegram_username: string;
+  role: string;
+  permissions: string;
+  status: string;
+  updated_at: string;
+  payload: string;
+};
+
 type CflowClientCode = {
   id: string;
   code: string;
@@ -83,6 +95,7 @@ const memoryBoxes = new Map<string, CflowBox>();
 const memoryShipments = new Map<string, CflowStoredEntity>();
 const memoryActivity = new Map<string, CflowStoredEntity>();
 const memoryInvoices = new Map<string, CflowStoredEntity>();
+const memoryStaff = new Map<string, CflowStaff>();
 const memoryClientCodes = new Map<string, CflowClientCode>();
 const memorySettings = new Map<string, string>();
 const memoryDeletedBoxes = new Map<string, CflowTombstone>();
@@ -276,6 +289,122 @@ function toDesktopEntity(entity: CflowStoredEntity) {
   return parsePayload<Record<string, unknown>>(entity.payload, { id: entity.id, updatedAt: entity.updated_at });
 }
 
+function normalizeTelegramUsername(value: unknown) {
+  return String(value || "").trim().replace(/^@/, "").toLowerCase();
+}
+
+function normalizeStaffRole(value: unknown) {
+  const role = String(value || "").trim();
+  if (role === "Руководитель" || role === "Администратор") return "Руководитель";
+  if (role === "Менеджер") return "Менеджер";
+  if (role === "Кладовщик") return "Кладовщик";
+  if (role === "Оператор") return "Оператор";
+  return role || "Менеджер";
+}
+
+function staffPermissions(role: string, permissions: unknown) {
+  if (Array.isArray(permissions) && permissions.length) return permissions.map(String);
+  if (role === "Руководитель") return ["all"];
+  if (role === "Менеджер") return ["receive_box", "issue_box", "search", "clients", "warehouse"];
+  if (role === "Кладовщик") return ["receive_box", "move_box", "issue_box", "warehouse"];
+  return ["receive_box", "issue_box", "search"];
+}
+
+function fromDesktopStaff(input: Record<string, unknown>): CflowStaff {
+  const now = nowIso();
+  const role = normalizeStaffRole(input.role);
+  const permissions = staffPermissions(role, input.permissions);
+  const payload = {
+    ...input,
+    id: String(input.id || `STAFF-${Date.now()}`).trim(),
+    name: String(input.name || input.username || "Менеджер").trim(),
+    username: String(input.username || "").trim(),
+    telegramUsername: normalizeTelegramUsername(input.telegramUsername || input.telegram || input.telegram_username),
+    role,
+    permissions,
+    status: String(input.status || "active").trim() || "active",
+    updatedAt: String(input.updatedAt || now),
+  };
+  return {
+    id: String(payload.id),
+    name: String(payload.name),
+    username: String(payload.username),
+    telegram_username: String(payload.telegramUsername),
+    role,
+    permissions: JSON.stringify(permissions),
+    status: String(payload.status),
+    updated_at: String(payload.updatedAt),
+    payload: JSON.stringify(payload),
+  };
+}
+
+function toDesktopStaff(staff: CflowStaff) {
+  return parsePayload<Record<string, unknown>>(staff.payload, {
+    id: staff.id,
+    name: staff.name,
+    username: staff.username,
+    telegramUsername: staff.telegram_username,
+    role: staff.role,
+    permissions: parsePayload<string[]>(staff.permissions, []),
+    status: staff.status,
+    updatedAt: staff.updated_at,
+  });
+}
+
+async function upsertStaff(env: Env, input: Record<string, unknown>) {
+  await ensureTables(env.DB);
+  const staff = fromDesktopStaff(input);
+  memoryStaff.set(staff.id, staff);
+  if (!env.DB) return staff;
+  await env.DB.prepare(`
+    INSERT INTO staff (id, name, username, telegram_username, role, permissions, status, updated_at, payload)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      username = excluded.username,
+      telegram_username = excluded.telegram_username,
+      role = excluded.role,
+      permissions = excluded.permissions,
+      status = excluded.status,
+      updated_at = excluded.updated_at,
+      payload = excluded.payload
+  `).bind(staff.id, staff.name, staff.username, staff.telegram_username, staff.role, staff.permissions, staff.status, staff.updated_at, staff.payload).run();
+  return staff;
+}
+
+async function listStaff(env: Env) {
+  await ensureTables(env.DB);
+  if (!env.DB) return [...memoryStaff.values()].sort((a, b) => a.name.localeCompare(b.name));
+  const result = await env.DB.prepare("SELECT * FROM staff ORDER BY name ASC").all<CflowStaff>();
+  return result.results || [];
+}
+
+async function findActiveStaffByTelegram(env: Env, username: string) {
+  const telegramUsername = normalizeTelegramUsername(username);
+  if (!telegramUsername) return null;
+  await ensureTables(env.DB);
+  const staff = env.DB
+    ? await env.DB.prepare("SELECT * FROM staff WHERE telegram_username = ? AND status = 'active' LIMIT 1").bind(telegramUsername).first<CflowStaff>()
+    : [...memoryStaff.values()].find((item) => item.telegram_username === telegramUsername && item.status === "active") || null;
+  return staff;
+}
+
+async function syncStaffList(env: Env, staffInput: Record<string, unknown>[]) {
+  const saved = await Promise.all(staffInput.map((item) => upsertStaff(env, item)));
+  const activeIds = new Set(saved.map((item) => item.id));
+  const existing = await listStaff(env);
+  await Promise.all(existing
+    .filter((item) => !activeIds.has(item.id))
+    .map((item) => upsertStaff(env, { ...toDesktopStaff(item), status: "disabled", updatedAt: nowIso() })));
+  return listStaff(env);
+}
+
+function canUseManageMiniApp(staff: CflowStaff | null) {
+  if (!staff) return false;
+  const permissions = parsePayload<string[]>(staff.permissions, []);
+  return permissions.includes("all") || permissions.includes("issue_box") || permissions.includes("warehouse") || permissions.includes("clients");
+}
+
 function parseTelegramUser(params: URLSearchParams) {
   const raw = params.get("user");
   if (!raw) return null;
@@ -308,11 +437,16 @@ async function verifyManageInitData(initData: string, env: Env) {
     .split(",")
     .map((item) => item.trim().replace(/^@/, "").toLowerCase())
     .filter(Boolean);
-  const username = String(verified.user.username || "").replace(/^@/, "").toLowerCase();
-  if (!username || !allowed.includes(username)) {
+  const username = normalizeTelegramUsername(verified.user.username || "");
+  if (!username) {
     return { ok: false as const, error: "Нет доступа к управлению ZABOTA CARGO" };
   }
-  return verified;
+  if (allowed.includes(username)) return verified;
+  const staff = await findActiveStaffByTelegram(env, username);
+  if (!canUseManageMiniApp(staff)) {
+    return { ok: false as const, error: "Нет доступа к управлению ZABOTA CARGO" };
+  }
+  return { ...verified, staff: staff ? toDesktopStaff(staff) : null };
 }
 
 async function ensureTables(db?: D1Database) {
@@ -340,6 +474,21 @@ async function ensureTables(db?: D1Database) {
   await db.prepare("CREATE INDEX IF NOT EXISTS clients_phone_idx ON clients(phone)").run();
   await db.prepare("CREATE INDEX IF NOT EXISTS clients_telegram_id_idx ON clients(telegram_id)").run();
   await db.prepare("CREATE INDEX IF NOT EXISTS clients_client_code_idx ON clients(client_code)").run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS staff (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      username TEXT DEFAULT '',
+      telegram_username TEXT DEFAULT '',
+      role TEXT DEFAULT '',
+      permissions TEXT DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'active',
+      updated_at TEXT NOT NULL,
+      payload TEXT NOT NULL
+    )
+  `).run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS staff_telegram_username_idx ON staff(telegram_username)").run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS staff_status_idx ON staff(status)").run();
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS boxes (
       id TEXT PRIMARY KEY,
@@ -1032,6 +1181,7 @@ async function cloudSnapshot(env: Env) {
   const invoices = (await listEntities(env, "invoices")).map(toDesktopEntity);
   const activity = (await listEntities(env, "activity")).map(toDesktopEntity);
   const clientCodes = (await listClientCodes(env)).map(toDesktopClientCode);
+  const staff = (await listStaff(env)).map(toDesktopStaff);
   const deletedBoxes = (await listDeletedBoxes(env)).map((item) => ({
     id: item.id,
     reason: item.reason,
@@ -1052,6 +1202,7 @@ async function cloudSnapshot(env: Env) {
     finances: deriveFinances(boxes),
     activity,
     clientCodes,
+    staff,
     deletedBoxes,
     deletedClients,
     settings,
@@ -1591,6 +1742,7 @@ async function handleAdminSyncSnapshot(request: Request, env: Env) {
     const invoices = Array.isArray(data.invoices) ? data.invoices : [];
     const activity = Array.isArray(data.activity) ? data.activity : [];
     const clientCodes = Array.isArray(data.clientCodes) ? data.clientCodes : [];
+    const staff = Array.isArray(data.staff) ? data.staff : [];
     const deletedBoxes = Array.isArray(data.deletedBoxes) ? data.deletedBoxes : [];
     const deletedClients = Array.isArray(data.deletedClients) ? data.deletedClients : [];
     const settings = data.settings && typeof data.settings === "object" ? data.settings as Record<string, unknown> : {};
@@ -1603,11 +1755,24 @@ async function handleAdminSyncSnapshot(request: Request, env: Env) {
     await Promise.all(invoices.map((invoice) => upsertEntity(env, "invoices", invoice as Record<string, unknown>, "INV")));
     await Promise.all(activity.map((item) => upsertEntity(env, "activity", item as Record<string, unknown>, "ACT")));
     await Promise.all(clientCodes.map((item, index) => upsertClientCode(env, item as Record<string, unknown>, index)));
+    if (staff.length) await syncStaffList(env, staff as Record<string, unknown>[]);
     await saveSettings(env, settings);
 
     return json({ ok: true, data: await cloudSnapshot(env) });
   } catch (error) {
     return json({ ok: false, error: error instanceof Error ? error.message : "Snapshot не сохранен" }, { status: 400 });
+  }
+}
+
+async function handleAdminStaffSync(request: Request, env: Env) {
+  if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
+  try {
+    const body = await request.json() as { staff?: Record<string, unknown>[] };
+    const staff = Array.isArray(body.staff) ? body.staff : [];
+    const synced = await syncStaffList(env, staff);
+    return json({ ok: true, staff: synced.map(toDesktopStaff) });
+  } catch (error) {
+    return json({ ok: false, error: error instanceof Error ? error.message : "Сотрудники не сохранены" }, { status: 400 });
   }
 }
 
@@ -1910,6 +2075,7 @@ const worker = {
     if (url.pathname === "/api/admin/snapshot" && request.method === "GET") return handleAdminSnapshot(request, env);
     if (url.pathname === "/api/admin/health" && request.method === "GET") return handleAdminHealth(request, env);
     if (url.pathname === "/api/admin/snapshot/sync" && request.method === "POST") return handleAdminSyncSnapshot(request, env);
+    if (url.pathname === "/api/admin/staff/sync" && request.method === "POST") return handleAdminStaffSync(request, env);
     if (url.pathname === "/api/admin/boxes/upsert" && request.method === "POST") return handleAdminUpsertBox(request, env);
     if (url.pathname === "/api/admin/boxes/delete" && request.method === "POST") return handleAdminDeleteBox(request, env);
     if (url.pathname === "/api/admin/invoices/upsert" && request.method === "POST") return handleAdminUpsertInvoice(request, env);

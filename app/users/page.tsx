@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useEffect, useState } from "react";
 
@@ -8,6 +8,7 @@ type User = {
   id: string;
   name: string;
   username: string;
+  telegramUsername?: string;
   role: string;
   permissions: string[];
   status: string;
@@ -21,8 +22,8 @@ declare global {
     cflowUsers?: {
       list: () => Promise<User[]>;
       authenticate: (username: string, password: string) => Promise<AuthResult>;
-      create: (user: { name: string; username: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
-      update: (user: { id: string; name: string; username: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
+      create: (user: { name: string; username: string; telegramUsername?: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
+      update: (user: { id: string; name: string; username: string; telegramUsername?: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
       delete: (userId: string) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
     };
   }
@@ -41,6 +42,7 @@ const fallbackUsers: User[] = [
     id: "USR-001",
     name: "Администратор",
     username: "esaraev85",
+    telegramUsername: "esaraev85",
     role: "Руководитель",
     permissions: ["all"],
     status: "active",
@@ -54,7 +56,7 @@ export default function UsersApp() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [users, setUsers] = useState<User[]>(fallbackUsers);
-  const [form, setForm] = useState({ name: "", username: "", password: "", role: "Менеджер" as Role });
+  const [form, setForm] = useState({ name: "", username: "", telegramUsername: "", password: "", role: "Менеджер" as Role });
   const [editingId, setEditingId] = useState("");
 
   const editingUser = users.find((user) => user.id === editingId);
@@ -120,6 +122,7 @@ export default function UsersApp() {
     setForm({
       name: user.name,
       username: user.username,
+      telegramUsername: user.telegramUsername || "",
       password: "",
       role: user.role as Role,
     });
@@ -128,7 +131,7 @@ export default function UsersApp() {
 
   function cancelEdit() {
     setEditingId("");
-    setForm({ name: "", username: "", password: "", role: "Менеджер" });
+    setForm({ name: "", username: "", telegramUsername: "", password: "", role: "Менеджер" });
     setError("");
   }
 
@@ -240,6 +243,14 @@ export default function UsersApp() {
               />
             </label>
             <label>
+              Telegram для mini app
+              <input
+                value={form.telegramUsername}
+                onChange={(event) => setForm({ ...form, telegramUsername: event.target.value })}
+                placeholder="@username"
+              />
+            </label>
+            <label>
               Пароль
               <input
                 type="password"
@@ -277,7 +288,7 @@ export default function UsersApp() {
                 <span className="box-id">{user.id}</span>
                 <span>
                   <strong>{user.name}</strong>
-                  <small>{user.username}</small>
+                  <small>{user.username}{user.telegramUsername ? ` - @${user.telegramUsername}` : " - Telegram не указан"}</small>
                 </span>
                 <span>{user.role}</span>
                 <span className="status">{user.statusLabel || user.status}</span>

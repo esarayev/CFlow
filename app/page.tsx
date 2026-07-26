@@ -6,6 +6,7 @@ type SessionUser = {
   id: string;
   name: string;
   username: string;
+  telegramUsername?: string;
   role: string;
   permissions: string[];
   status: string;
@@ -226,8 +227,8 @@ declare global {
     cflowUsers?: {
       list: () => Promise<SessionUser[]>;
       authenticate: (username: string, password: string) => Promise<AuthResult>;
-      create: (user: { name: string; username: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
-      update: (user: { id: string; name: string; username: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
+      create: (user: { name: string; username: string; telegramUsername?: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
+      update: (user: { id: string; name: string; username: string; telegramUsername?: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
       delete: (userId: string) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
     };
     cflowData?: {

@@ -697,13 +697,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   display: grid;
   place-items: center;
   justify-self: start;
-  width: min(54vw, 260px);
-  height: 54px;
+  width: min(58vw, 250px);
+  height: 92px;
   overflow: hidden;
   background: transparent;
 }
 .brand-logo img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: left center; }
-.brand-logo-manage { width: min(64vw, 260px); height: 88px; }
+.brand-logo-manage { width: min(66vw, 280px); height: 112px; }
 .client-shell-head {
   flex: 0 0 auto;
   display: grid;
@@ -1070,8 +1070,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 
 .zabota-logo-full {
   display: block;
-  width: min(88vw, 360px);
-  max-height: 160px;
+  width: min(88vw, 380px);
+  max-height: 176px;
   object-fit: contain;
   object-position: left center;
   background: transparent;
@@ -1439,8 +1439,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 }
 
 .manage-app .brand-logo {
-  width: min(66vw, 260px);
-  height: 82px;
+  width: min(68vw, 280px);
+  height: 112px;
   overflow: visible;
 }
 

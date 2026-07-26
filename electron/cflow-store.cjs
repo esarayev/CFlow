@@ -1043,7 +1043,7 @@ async function notifyInvoiceLocal(app, input) {
   if (!invoice) return { ok: false, error: "Накладная не найдена" };
   const cloud = await cloudRequest("/api/admin/invoices/notify", {
     method: "POST",
-    body: JSON.stringify({ invoiceId }),
+    body: JSON.stringify({ invoiceId, stage: input.stage || "china_warehouse" }),
   });
   if (!cloud?.ok) return { ok: false, error: cloud?.error || "Облако не отправило уведомления" };
   if (cloud.data) {

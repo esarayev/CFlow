@@ -1,4 +1,4 @@
-import handler from "vinext/server/app-router-entry";
+﻿import handler from "vinext/server/app-router-entry";
 
 interface Env {
   DB?: D1Database;
@@ -1500,14 +1500,26 @@ async function arriveInvoice(env: Env, invoiceId: string, user = "Менедже
   return nextInvoice;
 }
 
-function invoiceNotificationText(invoice: Record<string, unknown>, client: CflowClient, items: Record<string, unknown>[]) {
+function invoiceStageInfo(stage: string) {
+  const stages: Record<string, { title: string; status: string; field: string }> = {
+    china_warehouse: { title: "📦 Ваш товар зарегистрирован на складе в Китае.", status: "На складе в Китае", field: "chinaNotifiedAt" },
+    china_departed: { title: "✈️ Ваш товар покинул склад в Китае.", status: "Покинул склад в Китае", field: "chinaDepartedNotifiedAt" },
+    almaty_arrived: { title: "🇰🇿 Ваш товар прибыл на сортировочный пункт в Алматы.", status: "На сортировке в Алматы", field: "almatyArrivedNotifiedAt" },
+    almaty_departed: { title: "🚚 Ваш товар покинул сортировочный пункт в Алматы.", status: "Покинул Алматы", field: "almatyDepartedNotifiedAt" },
+    astana_arrived: { title: "✅ Ваш товар прибыл на склад в Астане.", status: "В Астане на складе", field: "astanaArrivedNotifiedAt" },
+  };
+  return stages[stage] || stages.china_warehouse;
+}
+
+function invoiceNotificationText(invoice: Record<string, unknown>, client: CflowClient, items: Record<string, unknown>[], stage = "china_warehouse") {
+  const stageInfo = invoiceStageInfo(stage);
   const lines = items.map((item, index) => {
     const track = String(item.track || item.boxId || `место ${index + 1}`).trim();
     const weight = String(item.weight || "").trim();
     return `• ${escapeHtml(track)}${weight ? `, ${escapeHtml(weight)} кг` : ""}`;
   });
   return [
-    "📦 Ваш товар зарегистрирован на складе в Китае.",
+    stageInfo.title,
     "",
     `Клиент: <b>${escapeHtml(client.name)}</b>`,
     `Накладная: <b>${escapeHtml(invoice.number || invoice.id || "")}</b>`,
@@ -1515,21 +1527,22 @@ function invoiceNotificationText(invoice: Record<string, unknown>, client: Cflow
     "",
     ...lines,
     "",
-    "Статус уже отображается в кабинете: На складе в Китае.",
+    `Статус уже отображается в кабинете: ${escapeHtml(stageInfo.status)}.`,
   ].join("\n");
 }
 
-async function notifyInvoiceClients(env: Env, request: Request, invoiceId: string) {
+async function notifyInvoiceClients(env: Env, request: Request, invoiceId: string, stage = "china_warehouse") {
   const entity = await findInvoice(env, invoiceId);
   const invoice = invoicePayload(entity);
   if (!invoice) throw new Error("Накладная не найдена");
   const items = invoiceItems(invoice);
+  const stageInfo = invoiceStageInfo(stage);
   const clients = await listClients(env);
   const clientsById = new Map(clients.map((client) => [client.id, client]));
   const groups = new Map<string, { client: CflowClient; items: Record<string, unknown>[] }>();
 
   for (const item of items) {
-    if (item.notifiedAt) continue;
+    if (item[stageInfo.field]) continue;
     const client = clientsById.get(String(item.clientId || "")) || await findClient(env, { clientCode: String(item.clientCode || "") });
     if (!client?.telegram_id) continue;
     const group = groups.get(client.id) || { client, items: [] };
@@ -1543,7 +1556,7 @@ async function notifyInvoiceClients(env: Env, request: Request, invoiceId: strin
     const result = await telegramApi(env, "sendMessage", {
       chat_id: group.client.telegram_id,
       parse_mode: "HTML",
-      text: invoiceNotificationText(invoice, group.client, group.items),
+      text: invoiceNotificationText(invoice, group.client, group.items, stage),
       reply_markup: telegramReplyKeyboard(clientWebAppUrl(request, env)),
     });
     if ((result as { ok?: boolean }).ok) {
@@ -1553,14 +1566,26 @@ async function notifyInvoiceClients(env: Env, request: Request, invoiceId: strin
   }
 
   const now = nowIso();
+  for (const item of items) {
+    const key = String(item.id || item.boxId || item.track || "");
+    if (!notifiedItemIds.has(key) || !item.boxId) continue;
+    const box = await findBox(env, String(item.boxId));
+    if (!box) continue;
+    await upsertBox(env, {
+      ...toDesktopBox(box),
+      status: stageInfo.status,
+      updatedAt: now,
+    });
+  }
   const nextItems = items.map((item) => {
     const key = String(item.id || item.boxId || item.track || "");
-    return notifiedItemIds.has(key) ? { ...item, notifiedAt: now, status: item.status || "На складе в Китае" } : item;
+    return notifiedItemIds.has(key) ? { ...item, [stageInfo.field]: now, notifiedAt: now, status: stageInfo.status } : item;
   });
   const nextInvoice = {
     ...invoice,
     status: sent > 0 ? "notified" : invoice.status,
     notifiedAt: sent > 0 ? now : invoice.notifiedAt,
+    lastNotifiedStage: sent > 0 ? stage : invoice.lastNotifiedStage,
     updatedAt: now,
     items: nextItems,
   };
@@ -1578,7 +1603,6 @@ function canIssueBoxes(boxes: Record<string, unknown>[]) {
   if (notReady.length) return { ok: false, code: "not_arrived", text: "Товар еще не поступил на склад выдачи" };
   return { ok: true, code: "ready", text: "Можно выдавать" };
 }
-
 async function boxesFromClaim(env: Env, token: string) {
   const verified = await verifyClaimToken(env, token);
   if (!verified.ok) return { ok: false as const, error: verified.error };
@@ -1832,8 +1856,8 @@ async function handleAdminConfirmInvoice(request: Request, env: Env) {
 async function handleAdminNotifyInvoice(request: Request, env: Env) {
   if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
   try {
-    const body = await request.json() as { invoiceId?: string; id?: string };
-    const result = await notifyInvoiceClients(env, request, String(body.invoiceId || body.id || ""));
+    const body = await request.json() as { invoiceId?: string; id?: string; stage?: string };
+    const result = await notifyInvoiceClients(env, request, String(body.invoiceId || body.id || ""), String(body.stage || "china_warehouse"));
     return json({ ok: true, sent: result.sent, total: result.total, invoice: result.invoice, data: await cloudSnapshot(env) });
   } catch (error) {
     return json({ ok: false, error: error instanceof Error ? error.message : "Уведомления не отправлены" }, { status: 400 });
@@ -1920,7 +1944,7 @@ async function handleManageInvoices(request: Request, env: Env) {
 }
 
 async function handleManageConfirmInvoice(request: Request, env: Env) {
-  const body = await request.json() as { initData?: string; invoiceId?: string; id?: string };
+  const body = await request.json() as { initData?: string; invoiceId?: string; id?: string; stage?: string };
   const verified = await verifyManageInitData(body.initData || "", env);
   if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
   try {
@@ -1936,7 +1960,7 @@ async function handleManageNotifyInvoice(request: Request, env: Env) {
   const verified = await verifyManageInitData(body.initData || "", env);
   if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
   try {
-    const result = await notifyInvoiceClients(env, request, String(body.invoiceId || body.id || ""));
+    const result = await notifyInvoiceClients(env, request, String(body.invoiceId || body.id || ""), String(body.stage || "china_warehouse"));
     return json({ ok: true, sent: result.sent, total: result.total, invoice: result.invoice, data: await cloudSnapshot(env) });
   } catch (error) {
     return json({ ok: false, error: error instanceof Error ? error.message : "Уведомления не отправлены" }, { status: 400 });

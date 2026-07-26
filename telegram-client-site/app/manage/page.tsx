@@ -234,12 +234,12 @@ export default function ManageMiniApp() {
       .catch(() => undefined);
   }
 
-  function invoiceAction(invoiceId: string, action: "confirm" | "arrive" | "notify") {
+  function invoiceAction(invoiceId: string, action: "confirm" | "arrive" | "notify", stage = "china_warehouse") {
     setIsLoading(true);
     fetch(`/api/manage/invoices/${action}`, {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ initData, invoiceId }),
+      body: JSON.stringify({ initData, invoiceId, stage }),
     })
       .then((response) => response.json())
       .then((data) => {
@@ -618,7 +618,10 @@ export default function ManageMiniApp() {
                       <div className="manage-invoice-actions">
                         <button type="button" disabled={isLoading || ["confirmed", "notified", "arrived"].includes(invoice.status || "")} onClick={() => invoiceAction(invoice.id, "confirm")}>Подтвердить</button>
                         <button type="button" disabled={isLoading || !["confirmed", "notified"].includes(invoice.status || "")} onClick={() => invoiceAction(invoice.id, "arrive")}>Поступила</button>
-                        <button className="primary" type="button" disabled={isLoading || !items.length || notified === items.length} onClick={() => invoiceAction(invoice.id, "notify")}>Уведомить</button>
+                        <button type="button" disabled={isLoading || !items.length} onClick={() => invoiceAction(invoice.id, "notify", "china_warehouse")}>Китай</button>
+                        <button type="button" disabled={isLoading || !items.length} onClick={() => invoiceAction(invoice.id, "notify", "china_departed")}>Выехал Китай</button>
+                        <button type="button" disabled={isLoading || !items.length} onClick={() => invoiceAction(invoice.id, "notify", "almaty_arrived")}>Алматы</button>
+                        <button className="primary" type="button" disabled={isLoading || !items.length} onClick={() => invoiceAction(invoice.id, "notify", "astana_arrived")}>Астана</button>
                       </div>
                     </div>
                   );

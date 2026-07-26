@@ -130,6 +130,14 @@ type InvoiceItemDraft = {
   description: string;
 };
 
+type InvoiceFormState = {
+  number: string;
+  supplier: string;
+  date: string;
+  comment: string;
+  rows: InvoiceItemDraft[];
+};
+
 type Invoice = {
   id: string;
   number: string;
@@ -642,12 +650,12 @@ export default function Home() {
     shipmentCost: "",
     nextStatus: "Ждет выдачи",
   });
-  const [invoiceForm, setInvoiceForm] = useState({
+  const [invoiceForm, setInvoiceForm] = useState<InvoiceFormState>({
     number: "",
     supplier: "Иван / склад Китай",
     date: new Date().toISOString().slice(0, 10),
     comment: "",
-    rows: "",
+    rows: [{ clientCode: "", track: "", weight: "", description: "" }],
   });
 
   const showFinance = sessionUser ? canSeeFinance(sessionUser) : false;
@@ -913,7 +921,14 @@ export default function Home() {
       setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
       return;
     }
-    const rows = parseInvoiceRows(invoiceForm.rows);
+    const rows = invoiceForm.rows
+      .map((item) => ({
+        clientCode: item.clientCode.trim(),
+        track: item.track.trim(),
+        weight: item.weight.trim(),
+        description: item.description.trim(),
+      }))
+      .filter((item) => item.clientCode || item.track || item.weight || item.description);
     if (!invoiceForm.number.trim()) {
       setError("Укажите номер накладной");
       return;
@@ -933,7 +948,7 @@ export default function Home() {
       "Накладная сохранена",
     );
     if (result.ok) {
-      setInvoiceForm((current) => ({ ...current, number: "", comment: "", rows: "" }));
+      setInvoiceForm((current) => ({ ...current, number: "", comment: "", rows: [{ clientCode: "", track: "", weight: "", description: "" }] }));
       setActiveNav("Накладные");
     }
   }
@@ -954,12 +969,12 @@ export default function Home() {
     await runApi(window.cflowData.arriveInvoice(securePayload({ invoiceId })), "Накладная отмечена как поступившая на склад");
   }
 
-  async function notifyInvoice(invoiceId: string) {
+  async function notifyInvoice(invoiceId: string, stage = "china_warehouse") {
     if (!window.cflowData) {
       setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
       return;
     }
-    const result = await window.cflowData.notifyInvoice(securePayload({ invoiceId }));
+    const result = await window.cflowData.notifyInvoice(securePayload({ invoiceId, stage }));
     applyResult(result);
     if (result.ok) setNotice(`Уведомления отправлены: ${result.sent || 0} из ${result.total || 0}`);
   }
@@ -1655,19 +1670,37 @@ function InvoicesPanel({
 }: {
   invoices: Invoice[];
   clients: ClientItem[];
-  form: { number: string; supplier: string; date: string; comment: string; rows: string };
-  setForm: Dispatch<SetStateAction<{ number: string; supplier: string; date: string; comment: string; rows: string }>>;
+  form: InvoiceFormState;
+  setForm: Dispatch<SetStateAction<InvoiceFormState>>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onConfirm: (invoiceId: string) => void;
   onArrive: (invoiceId: string) => void;
-  onNotify: (invoiceId: string) => void;
+  onNotify: (invoiceId: string, stage?: string) => void;
 }) {
-  const draftRows = parseInvoiceRows(form.rows);
+  const draftRows = form.rows.filter((item) => item.clientCode || item.track || item.weight || item.description);
   const matchedRows = draftRows.filter((item) => invoiceItemOwner(clients, item)).length;
   const sortedInvoices = [...invoices].sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
 
   function update(field: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateRow(index: number, field: keyof InvoiceItemDraft, value: string) {
+    setForm((current) => ({
+      ...current,
+      rows: current.rows.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item),
+    }));
+  }
+
+  function addRow() {
+    setForm((current) => ({ ...current, rows: [...current.rows, { clientCode: "", track: "", weight: "", description: "" }] }));
+  }
+
+  function removeRow(index: number) {
+    setForm((current) => {
+      const rows = current.rows.filter((_item, itemIndex) => itemIndex !== index);
+      return { ...current, rows: rows.length ? rows : [{ clientCode: "", track: "", weight: "", description: "" }] };
+    });
   }
 
   return (
@@ -1686,7 +1719,21 @@ function InvoicesPanel({
             <label>Отправитель<input value={form.supplier} onChange={(event) => update("supplier", event.target.value)} /></label>
             <label>Дата<input type="date" value={form.date} onChange={(event) => update("date", event.target.value)} /></label>
           </div>
-          <label>Строки накладной<textarea value={form.rows} onChange={(event) => update("rows", event.target.value)} placeholder="奇瑞QR AST A001 | YT123456CN | 1.4 | Кроссовки&#10;奇瑞QR AST A002 | SF987654CN | 0.8 | Чехол" /></label>
+          <div className="invoice-items-form">
+            <div className="invoice-items-head">
+              <strong>Позиции накладной</strong>
+              <button type="button" onClick={addRow}>Добавить позицию</button>
+            </div>
+            {form.rows.map((row, index) => (
+              <div className="invoice-item-fields" key={index}>
+                <label>Код клиента<input value={row.clientCode} onChange={(event) => updateRow(index, "clientCode", event.target.value)} placeholder="奇瑞QR AST A001" /></label>
+                <label>Трек<input value={row.track} onChange={(event) => updateRow(index, "track", event.target.value)} placeholder="YT123456CN" /></label>
+                <label>Вес, кг<input value={row.weight} onChange={(event) => updateRow(index, "weight", event.target.value)} placeholder="1.4" /></label>
+                <label>Описание<input value={row.description} onChange={(event) => updateRow(index, "description", event.target.value)} placeholder="Кроссовки, техника, одежда" /></label>
+                <button type="button" onClick={() => removeRow(index)} disabled={form.rows.length <= 1}>Удалить</button>
+              </div>
+            ))}
+          </div>
           <label>Комментарий<input value={form.comment} onChange={(event) => update("comment", event.target.value)} placeholder="Фото накладной, уточнения Ивана, партия" /></label>
           <button className="primary" type="submit">Сохранить накладную</button>
         </form>
@@ -1730,7 +1777,11 @@ function InvoicesPanel({
                 <div className="invoice-actions">
                   <button type="button" onClick={() => onConfirm(invoice.id)} disabled={invoice.status === "confirmed" || invoice.status === "notified"}>Подтвердить</button>
                   <button type="button" onClick={() => onArrive(invoice.id)} disabled={invoice.status !== "confirmed" && invoice.status !== "notified"}>Поступила</button>
-                  <button className="primary" type="button" onClick={() => onNotify(invoice.id)} disabled={!items.length || notified === items.length}>Отправить уведомления</button>
+                  <button type="button" onClick={() => onNotify(invoice.id, "china_warehouse")} disabled={!items.length}>Склад Китай</button>
+                  <button type="button" onClick={() => onNotify(invoice.id, "china_departed")} disabled={!items.length}>Покинул Китай</button>
+                  <button type="button" onClick={() => onNotify(invoice.id, "almaty_arrived")} disabled={!items.length}>Прибыл Алматы</button>
+                  <button type="button" onClick={() => onNotify(invoice.id, "almaty_departed")} disabled={!items.length}>Покинул Алматы</button>
+                  <button className="primary" type="button" onClick={() => onNotify(invoice.id, "astana_arrived")} disabled={!items.length}>Склад Астана</button>
                 </div>
               </div>
             );

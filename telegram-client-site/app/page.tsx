@@ -68,7 +68,11 @@ function cacheProfile(profile: ClientProfile, telegramUserId?: string | number) 
   if (typeof window === "undefined" || !profile.registered) return;
   const userId = String(telegramUserId || "");
   if (!userId) return;
-  window.localStorage.setItem(profileCacheKey, JSON.stringify({ ...profile, telegramUserId: userId }));
+  try {
+    window.localStorage.setItem(profileCacheKey, JSON.stringify({ ...profile, telegramUserId: userId }));
+  } catch {
+    // Telegram WebView can temporarily block storage after opening from a bot notification.
+  }
 }
 
 function currentAssetSignature() {

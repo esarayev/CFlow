@@ -395,6 +395,28 @@ h2 {
   gap: 8px;
 }
 
+.scan-card-actions .scan-action {
+  border-color: transparent;
+  color: #ffffff;
+  font-weight: 750;
+}
+
+.scan-card-actions .scan-action-qr {
+  background: #ea6a1a;
+}
+
+.scan-card-actions .scan-action-qr:hover {
+  background: #c95815;
+}
+
+.scan-card-actions .scan-action-box {
+  background: #236b61;
+}
+
+.scan-card-actions .scan-action-box:hover {
+  background: #1b554d;
+}
+
 .dashboard-side-widgets {
   display: grid;
   gap: 12px;

@@ -1569,8 +1569,8 @@ export default function Home() {
                   <span>{warehouseAddress ? "Адрес склада задан" : "Адрес склада не задан"}</span>
                 </div>
                 <div className="scan-card-actions">
-                  <button type="button" onClick={() => openScannerModal("clientQr")}>QR клиента</button>
-                  <button type="button" onClick={() => openScannerModal("boxCode")}>Прием коробки</button>
+                  <button className="scan-action scan-action-qr" type="button" onClick={() => openScannerModal("clientQr")}>QR клиента</button>
+                  <button className="scan-action scan-action-box" type="button" onClick={() => openScannerModal("boxCode")}>Прием коробки</button>
                   <button type="button" onClick={() => setDashboardPanel("codes")}>Схема кодов</button>
                   <button type="button" onClick={() => setDashboardPanel("address")}>Адрес склада</button>
                 </div>

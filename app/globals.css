@@ -162,16 +162,16 @@ h2 {
 
 .brand-logo {
   display: block;
-  width: 250px;
-  height: 104px;
+  width: 210px;
+  height: 80px;
   flex: 0 0 auto;
   object-fit: contain;
   object-position: left center;
 }
 
 .brand-logo-auth {
-  width: 300px;
-  height: 124px;
+  width: 250px;
+  height: 96px;
 }
 
 .brand strong,

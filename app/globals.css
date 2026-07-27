@@ -1250,6 +1250,21 @@ h2 {
   grid-template-columns: 110px minmax(0, 1fr) 116px;
 }
 
+.scanner-client-box-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 112px;
+  gap: 10px;
+  align-items: stretch;
+}
+
+.scanner-client-box-row .modal-box-row {
+  min-height: 56px;
+}
+
+.scanner-client-box-row > button.danger {
+  min-height: 56px;
+}
+
 .modal-danger {
   display: flex;
   align-items: center;

@@ -607,6 +607,15 @@ function isWaitingIssue(box: BoxItem) {
   return box.status === "Ждет выдачи";
 }
 
+function isIssuedBox(box?: BoxItem | null) {
+  return String(box?.status || "").trim().toLowerCase().includes("\u0432\u044b\u0434\u0430\u043d");
+}
+
+function canIssueFromAstana(box?: BoxItem | null) {
+  const status = String(box?.status || "").trim().toLowerCase();
+  return Boolean(box) && !isIssuedBox(box) && status.includes("\u0430\u0441\u0442\u0430\u043d") && status.includes("\u0441\u043a\u043b\u0430\u0434");
+}
+
 function findClientByCode(clients: ClientItem[], clientCode?: string) {
   const normalizedCode = String(clientCode || "").trim().toLowerCase();
   if (!normalizedCode) return undefined;
@@ -1230,9 +1239,11 @@ export default function Home() {
       "Посылка выдана клиенту",
     );
     if (result.ok) {
-      setScannerOpen(false);
-      setBoxScan(null);
-      setClientQrScan(null);
+      setBoxScan((current) => current?.box?.id === box.id ? { ...current, box: { ...current.box, status: "Выдано", place: "Выдано клиенту" } } : current);
+      setClientQrScan((current) => current ? {
+        ...current,
+        boxes: (current.boxes || []).map((item) => item.id === box.id ? { ...item, status: "Выдано", place: "Выдано клиенту" } : item),
+      } : current);
       setSelectedId(box.id);
     }
   }
@@ -1696,7 +1707,6 @@ function ScannerModal({
   const scannedClient = boxScan?.client || null;
   const scannedItem = boxScan?.item || null;
   const scannedInvoice = boxScan?.invoice || null;
-  const scannedBoxIssued = String(scannedBox?.status || "").trim().toLowerCase().includes("выдан");
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -1739,11 +1749,14 @@ function ScannerModal({
             <div className="modal-section">
               <h3>Посылки</h3>
               {clientBoxes.map((box) => (
-                <button className="box-row modal-box-row" type="button" key={box.id} onClick={() => onOpenBox(box.id)}>
+                <div className="scanner-client-box-row" key={box.id}>
+                  <button className="box-row modal-box-row" type="button" onClick={() => onOpenBox(box.id)}>
                   <strong>{box.id}</strong>
                   <span>{box.track || box.code || "Без трека"} · {box.client}</span>
                   <em>{box.status}</em>
-                </button>
+                  </button>
+                  {canIssueFromAstana(box) ? <button className="danger" type="button" onClick={() => onIssueBox(box)}>Выдать</button> : null}
+                </div>
               ))}
             </div>
           </div>
@@ -1767,7 +1780,6 @@ function ScannerModal({
             <div className="form-actions">
               {scannedBox ? <button type="button" onClick={() => onOpenBox(scannedBox.id)}>Открыть карточку</button> : null}
               {scannedBox && boxScan.canAccept ? <button className="primary" type="button" onClick={() => onAcceptBox(scannedBox.id)}>Добавить в склад</button> : null}
-              {scannedBox && !scannedBoxIssued ? <button className="danger" type="button" onClick={() => onIssueBox(scannedBox)}>Выдать</button> : null}
             </div>
           </div>
         ) : null}

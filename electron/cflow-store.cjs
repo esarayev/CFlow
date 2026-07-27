@@ -533,6 +533,8 @@ function normalizeInvoiceItem(data, item, index = 0) {
     phone: client?.phone || String(item.phone || "").trim(),
     telegramId: client?.telegramId || String(item.telegramId || "").trim(),
     track: String(item.track || "").trim(),
+    title: String(item.title || item.name || "").trim(),
+    quantity: String(item.quantity || item.qty || "1").trim(),
     weight: String(item.weight || "").trim(),
     dimensions: String(item.dimensions || "").trim(),
     description: String(item.description || "").trim(),
@@ -553,7 +555,7 @@ function normalizeInvoice(data, input) {
     date: String(input.date || now.slice(0, 10)).trim(),
     status: String(input.status || "draft").trim(),
     comment: String(input.comment || "").trim(),
-    items: items.map((item, index) => normalizeInvoiceItem(data, item, index)).filter((item) => item.clientCode || item.track || item.description),
+    items: items.map((item, index) => normalizeInvoiceItem(data, item, index)).filter((item) => item.clientCode || item.track || item.title || item.description),
     createdAt: String(input.createdAt || now),
     updatedAt: now,
     confirmedAt: String(input.confirmedAt || "").trim(),
@@ -985,10 +987,16 @@ async function confirmInvoiceLocal(app, input) {
         boxId = existingByTrack.id;
       } else {
         const client = item.clientId ? data.clients.find((clientItem) => clientItem.id === item.clientId) : findClientByClientCode(data, item.clientCode);
+        const itemComment = [
+          item.title,
+          item.quantity ? `Количество: ${item.quantity}` : "",
+          item.description,
+          invoice.comment,
+        ].filter(Boolean).join(" · ");
         const box = {
           id: makeId("CF", data.boxes.length),
           track: item.track || `INV-${invoice.number}-${index + 1}`,
-          code: item.description || "",
+          code: item.title || item.description || "",
           clientCode: item.clientCode,
           clientId: client?.id || item.clientId || "",
           client: client?.name || item.clientName || "Клиент не найден",
@@ -1004,7 +1012,7 @@ async function confirmInvoiceLocal(app, input) {
           batch: invoice.number,
           invoiceId: invoice.id,
           invoiceItemId: item.id,
-          comment: item.description || invoice.comment || "",
+          comment: itemComment,
           createdAt: now,
           updatedAt: now,
           owner: input.user || "Оператор",

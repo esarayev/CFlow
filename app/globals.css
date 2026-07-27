@@ -540,16 +540,72 @@ h2 {
   gap: 10px;
 }
 
+.invoice-section,
+.invoice-item-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfcfe;
+}
+
+.invoice-section-title,
 .invoice-items-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
+.invoice-section-title {
+  display: grid;
+  justify-content: stretch;
+}
+
+.invoice-section-title strong,
 .invoice-items-head strong {
   color: var(--foreground);
   font-size: 14px;
+}
+
+.invoice-section-title small,
+.invoice-items-head small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.invoice-item-card {
+  background: #fff;
+}
+
+.invoice-item-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.invoice-item-title strong {
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.invoice-item-title button {
+  min-height: 36px;
+}
+
+.invoice-item-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.invoice-item-grid .wide {
+  grid-column: 1 / -1;
 }
 
 .invoice-item-fields {
@@ -1780,6 +1836,7 @@ h2 {
   .role-grid,
   .split-panels,
   .finance-grid,
+  .invoice-item-grid,
   .knowledge-layout,
   .knowledge-list {
     grid-template-columns: 1fr;
@@ -1828,8 +1885,15 @@ h2 {
   .box-row,
   .entity-row,
   .details-list div,
+  .invoice-items-head,
+  .invoice-item-title,
   .knowledge-card-head {
     grid-template-columns: 1fr;
+  }
+
+  .invoice-items-head,
+  .invoice-item-title {
+    display: grid;
   }
 
   .knowledge-card-head {

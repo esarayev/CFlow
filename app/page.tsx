@@ -114,6 +114,8 @@ type InvoiceItem = {
   phone?: string;
   telegramId?: string;
   track: string;
+  title?: string;
+  quantity?: string;
   weight: string;
   dimensions?: string;
   description?: string;
@@ -126,7 +128,10 @@ type InvoiceItem = {
 type InvoiceItemDraft = {
   clientCode: string;
   track: string;
+  title: string;
+  quantity: string;
   weight: string;
+  dimensions: string;
   description: string;
 };
 
@@ -137,6 +142,18 @@ type InvoiceFormState = {
   comment: string;
   rows: InvoiceItemDraft[];
 };
+
+function emptyInvoiceRow(): InvoiceItemDraft {
+  return {
+    clientCode: "",
+    track: "",
+    title: "",
+    quantity: "1",
+    weight: "",
+    dimensions: "",
+    description: "",
+  };
+}
 
 type Invoice = {
   id: string;
@@ -588,11 +605,14 @@ function parseInvoiceRows(rows: string): InvoiceItemDraft[] {
       return {
         clientCode: parts[0] || "",
         track: parts[1] || "",
-        weight: parts[2] || "",
-        description: parts.slice(3).join(" | "),
+        title: parts[2] || "",
+        quantity: parts[3] || "1",
+        weight: parts[4] || "",
+        dimensions: parts[5] || "",
+        description: parts.slice(6).join(" | "),
       };
     })
-    .filter((item) => item.clientCode || item.track || item.description);
+    .filter((item) => item.clientCode || item.track || item.title || item.description);
 }
 
 function invoiceItemOwner(clients: ClientItem[], item: Pick<InvoiceItem, "clientCode" | "clientId" | "clientName">) {
@@ -655,7 +675,7 @@ export default function Home() {
     supplier: "Иван / склад Китай",
     date: new Date().toISOString().slice(0, 10),
     comment: "",
-    rows: [{ clientCode: "", track: "", weight: "", description: "" }],
+    rows: [emptyInvoiceRow()],
   });
 
   const showFinance = sessionUser ? canSeeFinance(sessionUser) : false;
@@ -925,10 +945,13 @@ export default function Home() {
       .map((item) => ({
         clientCode: item.clientCode.trim(),
         track: item.track.trim(),
+        title: item.title.trim(),
+        quantity: item.quantity.trim() || "1",
         weight: item.weight.trim(),
+        dimensions: item.dimensions.trim(),
         description: item.description.trim(),
       }))
-      .filter((item) => item.clientCode || item.track || item.weight || item.description);
+      .filter((item) => item.clientCode || item.track || item.title || item.quantity !== "1" || item.weight || item.dimensions || item.description);
     if (!invoiceForm.number.trim()) {
       setError("Укажите номер накладной");
       return;
@@ -948,7 +971,7 @@ export default function Home() {
       "Накладная сохранена",
     );
     if (result.ok) {
-      setInvoiceForm((current) => ({ ...current, number: "", comment: "", rows: [{ clientCode: "", track: "", weight: "", description: "" }] }));
+      setInvoiceForm((current) => ({ ...current, number: "", comment: "", rows: [emptyInvoiceRow()] }));
       setActiveNav("Накладные");
     }
   }
@@ -1677,7 +1700,7 @@ function InvoicesPanel({
   onArrive: (invoiceId: string) => void;
   onNotify: (invoiceId: string, stage?: string) => void;
 }) {
-  const draftRows = form.rows.filter((item) => item.clientCode || item.track || item.weight || item.description);
+  const draftRows = form.rows.filter((item) => item.clientCode || item.track || item.title || item.quantity !== "1" || item.weight || item.dimensions || item.description);
   const matchedRows = draftRows.filter((item) => invoiceItemOwner(clients, item)).length;
   const sortedInvoices = [...invoices].sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
 
@@ -1693,13 +1716,13 @@ function InvoicesPanel({
   }
 
   function addRow() {
-    setForm((current) => ({ ...current, rows: [...current.rows, { clientCode: "", track: "", weight: "", description: "" }] }));
+    setForm((current) => ({ ...current, rows: [...current.rows, emptyInvoiceRow()] }));
   }
 
   function removeRow(index: number) {
     setForm((current) => {
       const rows = current.rows.filter((_item, itemIndex) => itemIndex !== index);
-      return { ...current, rows: rows.length ? rows : [{ clientCode: "", track: "", weight: "", description: "" }] };
+      return { ...current, rows: rows.length ? rows : [emptyInvoiceRow()] };
     });
   }
 
@@ -1714,27 +1737,55 @@ function InvoicesPanel({
           <span className="counter">{matchedRows}/{draftRows.length} клиентов найдено</span>
         </div>
         <form className="invoice-form" onSubmit={onSubmit}>
-          <div className="form-grid">
-            <label>Номер накладной<input value={form.number} onChange={(event) => update("number", event.target.value)} placeholder="Иван-26.07-01" /></label>
-            <label>Отправитель<input value={form.supplier} onChange={(event) => update("supplier", event.target.value)} /></label>
-            <label>Дата<input type="date" value={form.date} onChange={(event) => update("date", event.target.value)} /></label>
-          </div>
-          <div className="invoice-items-form">
+          <section className="invoice-section">
+            <div className="invoice-section-title">
+              <strong>1. Шапка накладной</strong>
+              <small>Общие данные документа, который прислал склад или Иван.</small>
+            </div>
+            <div className="form-grid">
+              <label>Номер накладной<input value={form.number} onChange={(event) => update("number", event.target.value)} placeholder="IVAN-26.07-01" /></label>
+              <label>Отправитель / склад<input value={form.supplier} onChange={(event) => update("supplier", event.target.value)} placeholder="Иван / склад Китай" /></label>
+              <label>Дата накладной<input type="date" value={form.date} onChange={(event) => update("date", event.target.value)} /></label>
+            </div>
+          </section>
+
+          <section className="invoice-section">
             <div className="invoice-items-head">
-              <strong>Позиции накладной</strong>
+              <div>
+                <strong>2. Позиции товара</strong>
+                <small>Одна строка накладной = одна посылка или один товарный пункт.</small>
+              </div>
               <button type="button" onClick={addRow}>Добавить позицию</button>
             </div>
-            {form.rows.map((row, index) => (
-              <div className="invoice-item-fields" key={index}>
-                <label>Код клиента<input value={row.clientCode} onChange={(event) => updateRow(index, "clientCode", event.target.value)} placeholder="奇瑞QR AST A001" /></label>
-                <label>Трек<input value={row.track} onChange={(event) => updateRow(index, "track", event.target.value)} placeholder="YT123456CN" /></label>
-                <label>Вес, кг<input value={row.weight} onChange={(event) => updateRow(index, "weight", event.target.value)} placeholder="1.4" /></label>
-                <label>Описание<input value={row.description} onChange={(event) => updateRow(index, "description", event.target.value)} placeholder="Кроссовки, техника, одежда" /></label>
-                <button type="button" onClick={() => removeRow(index)} disabled={form.rows.length <= 1}>Удалить</button>
-              </div>
-            ))}
-          </div>
-          <label>Комментарий<input value={form.comment} onChange={(event) => update("comment", event.target.value)} placeholder="Фото накладной, уточнения Ивана, партия" /></label>
+            <div className="invoice-items-form">
+              {form.rows.map((row, index) => (
+                <div className="invoice-item-card" key={index}>
+                  <div className="invoice-item-title">
+                    <strong>Позиция {index + 1}</strong>
+                    <button type="button" onClick={() => removeRow(index)} disabled={form.rows.length <= 1}>Удалить</button>
+                  </div>
+                  <div className="invoice-item-grid">
+                    <label>Код клиента<input value={row.clientCode} onChange={(event) => updateRow(index, "clientCode", event.target.value)} placeholder="奇瑞QR AST A001" /></label>
+                    <label>Трек / номер отправления<input value={row.track} onChange={(event) => updateRow(index, "track", event.target.value)} placeholder="YT123456CN" /></label>
+                    <label>Название товара<input value={row.title} onChange={(event) => updateRow(index, "title", event.target.value)} placeholder="Кроссовки Nike" /></label>
+                    <label>Количество<input value={row.quantity} onChange={(event) => updateRow(index, "quantity", event.target.value)} placeholder="1" inputMode="numeric" /></label>
+                    <label>Вес, кг<input value={row.weight} onChange={(event) => updateRow(index, "weight", event.target.value)} placeholder="1.4" inputMode="decimal" /></label>
+                    <label>Место / размер<input value={row.dimensions} onChange={(event) => updateRow(index, "dimensions", event.target.value)} placeholder="40x30x20 или мешок 2" /></label>
+                    <label className="wide">Комментарий по позиции<input value={row.description} onChange={(event) => updateRow(index, "description", event.target.value)} placeholder="Цвет, модель, фото, уточнение по товару" /></label>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="invoice-section">
+            <div className="invoice-section-title">
+              <strong>3. Общий комментарий</strong>
+              <small>Необязательные заметки по всей накладной.</small>
+            </div>
+            <label>Комментарий<input value={form.comment} onChange={(event) => update("comment", event.target.value)} placeholder="Фото накладной, уточнения Ивана, партия" /></label>
+          </section>
+
           <button className="primary" type="submit">Сохранить накладную</button>
         </form>
         {draftRows.length ? (
@@ -1742,10 +1793,10 @@ function InvoicesPanel({
             {draftRows.map((item, index) => {
               const owner = invoiceItemOwner(clients, item);
               return (
-                <div className="invoice-line" key={`${item.clientCode}-${item.track}-${index}`}>
+                <div className="invoice-line" key={[item.clientCode, item.track, index].join("-")}>
                   <span className={owner ? "status" : "status danger"}>{owner ? "Клиент найден" : "Клиент не найден"}</span>
-                  <strong>{item.clientCode || "без кода"}</strong>
-                  <small>{owner || "Проверьте код клиента"} · {item.track || "трек не указан"} · {item.weight || "вес не указан"}</small>
+                  <strong>{item.clientCode || "без кода"}{item.title ? " - " + item.title : ""}</strong>
+                  <small>{owner || "Проверьте код клиента"} · {item.track || "трек не указан"} · {item.quantity || "1"} шт. · {item.weight || "вес не указан"}</small>
                 </div>
               );
             })}
@@ -1769,7 +1820,7 @@ function InvoicesPanel({
             return (
               <div className="invoice-card" key={invoice.id}>
                 <div>
-                  <span className={`status ${invoice.status === "notified" ? "" : invoice.status === "confirmed" ? "blue" : "neutral"}`}>{invoice.status || "draft"}</span>
+                  <span className={"status " + (invoice.status === "notified" ? "" : invoice.status === "confirmed" ? "blue" : "neutral")}>{invoice.status || "draft"}</span>
                   <h3>{invoice.number}</h3>
                   <p>{invoice.supplier} · {invoice.date} · строк: {items.length}</p>
                   <small>Клиентов найдено: {matched}/{items.length} · уведомлено: {notified}/{items.length}</small>

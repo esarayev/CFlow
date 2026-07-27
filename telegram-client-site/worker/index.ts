@@ -1391,6 +1391,8 @@ async function resolveInvoiceItem(env: Env, item: Record<string, unknown>) {
     clientName: client?.name || String(item.clientName || ""),
     phone: client?.phone || String(item.phone || ""),
     telegramId: client?.telegram_id || String(item.telegramId || ""),
+    title: String(item.title || item.name || ""),
+    quantity: String(item.quantity || item.qty || "1"),
     matchStatus: client ? "matched" : "not_found",
   };
 }
@@ -1404,10 +1406,16 @@ async function createBoxFromInvoiceItem(env: Env, invoice: Record<string, unknow
 
   const client = item.clientId ? await findClient(env, { id: String(item.clientId) }) : await findClient(env, { clientCode: String(item.clientCode || "") });
   const now = nowIso();
+  const itemComment = [
+    String(item.title || "").trim(),
+    String(item.quantity || "").trim() ? `Количество: ${String(item.quantity || "").trim()}` : "",
+    String(item.description || "").trim(),
+    String(invoice.comment || "").trim(),
+  ].filter(Boolean).join(" · ");
   return await upsertBox(env, {
     id: makeBoxId(),
     track: track || `INV-${String(invoice.number || invoice.id || "").trim()}-${String(item.id || Date.now())}`,
-    code: String(item.marking || item.code || item.description || "").trim(),
+    code: String(item.marking || item.code || item.title || item.description || "").trim(),
     clientCode: item.clientCode || client?.client_code || "",
     clientId: client?.id || item.clientId || "",
     client: client?.name || item.clientName || "Клиент не найден",
@@ -1423,7 +1431,7 @@ async function createBoxFromInvoiceItem(env: Env, invoice: Record<string, unknow
     batch: String(invoice.number || invoice.title || invoice.id || ""),
     invoiceId: String(invoice.id || ""),
     invoiceItemId: String(item.id || ""),
-    comment: String(item.description || invoice.comment || ""),
+    comment: itemComment,
     owner: "Накладная",
     createdAt: now,
     updatedAt: now,
@@ -1520,9 +1528,11 @@ function invoiceStageInfo(stage: string) {
 function invoiceNotificationText(invoice: Record<string, unknown>, client: CflowClient, items: Record<string, unknown>[], stage = "china_warehouse") {
   const stageInfo = invoiceStageInfo(stage);
   const lines = items.map((item, index) => {
+    const title = String(item.title || item.description || "").trim();
     const track = String(item.track || item.boxId || `место ${index + 1}`).trim();
+    const quantity = String(item.quantity || "").trim();
     const weight = String(item.weight || "").trim();
-    return `• ${escapeHtml(track)}${weight ? `, ${escapeHtml(weight)} кг` : ""}`;
+    return `• ${title ? `${escapeHtml(title)} — ` : ""}${escapeHtml(track)}${quantity ? `, ${escapeHtml(quantity)} шт.` : ""}${weight ? `, ${escapeHtml(weight)} кг` : ""}`;
   });
   return [
     stageInfo.title,

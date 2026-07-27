@@ -116,10 +116,12 @@ type InvoiceItem = {
   track: string;
   title?: string;
   quantity?: string;
+  packageCount?: string;
   weight: string;
   dimensions?: string;
   description?: string;
   boxId?: string;
+  boxIds?: string[];
   status?: string;
   confirmedAt?: string;
   notifiedAt?: string;
@@ -130,6 +132,7 @@ type InvoiceItemDraft = {
   track: string;
   title: string;
   quantity: string;
+  packageCount: string;
   weight: string;
   dimensions: string;
   description: string;
@@ -149,6 +152,7 @@ function emptyInvoiceRow(): InvoiceItemDraft {
     track: "",
     title: "",
     quantity: "1",
+    packageCount: "1",
     weight: "",
     dimensions: "",
     description: "",
@@ -607,9 +611,10 @@ function parseInvoiceRows(rows: string): InvoiceItemDraft[] {
         track: parts[1] || "",
         title: parts[2] || "",
         quantity: parts[3] || "1",
-        weight: parts[4] || "",
-        dimensions: parts[5] || "",
-        description: parts.slice(6).join(" | "),
+        packageCount: parts[4] || "1",
+        weight: parts[5] || "",
+        dimensions: parts[6] || "",
+        description: parts.slice(7).join(" | "),
       };
     })
     .filter((item) => item.clientCode || item.track || item.title || item.description);
@@ -947,11 +952,12 @@ export default function Home() {
         track: item.track.trim(),
         title: item.title.trim(),
         quantity: item.quantity.trim() || "1",
+        packageCount: item.packageCount.trim() || "1",
         weight: item.weight.trim(),
         dimensions: item.dimensions.trim(),
         description: item.description.trim(),
       }))
-      .filter((item) => item.clientCode || item.track || item.title || item.quantity !== "1" || item.weight || item.dimensions || item.description);
+      .filter((item) => item.clientCode || item.track || item.title || item.quantity !== "1" || item.packageCount !== "1" || item.weight || item.dimensions || item.description);
     if (!invoiceForm.number.trim()) {
       setError("Укажите номер накладной");
       return;
@@ -1700,7 +1706,7 @@ function InvoicesPanel({
   onArrive: (invoiceId: string) => void;
   onNotify: (invoiceId: string, stage?: string) => void;
 }) {
-  const draftRows = form.rows.filter((item) => item.clientCode || item.track || item.title || item.quantity !== "1" || item.weight || item.dimensions || item.description);
+  const draftRows = form.rows.filter((item) => item.clientCode || item.track || item.title || item.quantity !== "1" || item.packageCount !== "1" || item.weight || item.dimensions || item.description);
   const matchedRows = draftRows.filter((item) => invoiceItemOwner(clients, item)).length;
   const sortedInvoices = [...invoices].sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
 
@@ -1769,6 +1775,7 @@ function InvoicesPanel({
                     <label>Трек / номер отправления<input value={row.track} onChange={(event) => updateRow(index, "track", event.target.value)} placeholder="YT123456CN" /></label>
                     <label>Название товара<input value={row.title} onChange={(event) => updateRow(index, "title", event.target.value)} placeholder="Кроссовки Nike" /></label>
                     <label>Количество<input value={row.quantity} onChange={(event) => updateRow(index, "quantity", event.target.value)} placeholder="1" inputMode="numeric" /></label>
+                    <label>Коробок / мест<input value={row.packageCount} onChange={(event) => updateRow(index, "packageCount", event.target.value)} placeholder="1" inputMode="numeric" /></label>
                     <label>Вес, кг<input value={row.weight} onChange={(event) => updateRow(index, "weight", event.target.value)} placeholder="1.4" inputMode="decimal" /></label>
                     <label>Место / размер<input value={row.dimensions} onChange={(event) => updateRow(index, "dimensions", event.target.value)} placeholder="40x30x20 или мешок 2" /></label>
                     <label className="wide">Комментарий по позиции<input value={row.description} onChange={(event) => updateRow(index, "description", event.target.value)} placeholder="Цвет, модель, фото, уточнение по товару" /></label>
@@ -1796,7 +1803,7 @@ function InvoicesPanel({
                 <div className="invoice-line" key={[item.clientCode, item.track, index].join("-")}>
                   <span className={owner ? "status" : "status danger"}>{owner ? "Клиент найден" : "Клиент не найден"}</span>
                   <strong>{item.clientCode || "без кода"}{item.title ? " - " + item.title : ""}</strong>
-                  <small>{owner || "Проверьте код клиента"} · {item.track || "трек не указан"} · {item.quantity || "1"} шт. · {item.weight || "вес не указан"}</small>
+                  <small>{owner || "Проверьте код клиента"} · {item.track || "трек не указан"} · товар: {item.quantity || "1"} · мест: {item.packageCount || "1"} · {item.weight || "вес не указан"}</small>
                 </div>
               );
             })}

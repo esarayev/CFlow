@@ -537,6 +537,18 @@ function chargeableWeight(weight, dimensions) {
   return Math.max(numericWeight(weight), volumeWeight(dimensions));
 }
 
+function positiveInt(value, fallback = 1, max = 99) {
+  const parsed = Math.floor(toNumber(value));
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, max);
+}
+
+function packageTrack(item, invoice, packageIndex, packageTotal) {
+  const track = String(item.track || "").trim();
+  if (packageTotal <= 1) return track || `INV-${invoice.number}-${item.id || packageIndex}`;
+  return track ? `${track}-${packageIndex}` : `INV-${invoice.number}-${item.id || "ROW"}-${packageIndex}`;
+}
+
 function findClientByClientCode(data, clientCode) {
   const normalized = normalizeGeneratedClientCode(clientCode).toLowerCase();
   if (!normalized) return null;
@@ -556,10 +568,12 @@ function normalizeInvoiceItem(data, item, index = 0) {
     track: String(item.track || "").trim(),
     title: String(item.title || item.name || "").trim(),
     quantity: String(item.quantity || item.qty || "1").trim(),
+    packageCount: String(positiveInt(item.packageCount || item.packages || item.package_count || "1")).trim(),
     weight: String(item.weight || "").trim(),
     dimensions: String(item.dimensions || "").trim(),
     description: String(item.description || "").trim(),
     boxId: String(item.boxId || "").trim(),
+    boxIds: Array.isArray(item.boxIds) ? item.boxIds.map(String).filter(Boolean) : [],
     status: client ? String(item.status || "Клиент найден").trim() : "Клиент не найден",
     notifiedAt: String(item.notifiedAt || "").trim(),
     confirmedAt: String(item.confirmedAt || "").trim(),
@@ -1118,55 +1132,82 @@ async function confirmInvoiceLocal(app, input) {
   const now = nowIso();
   const items = invoice.items.map((sourceItem, index) => {
     const item = normalizeInvoiceItem(data, sourceItem, index);
-    let boxId = item.boxId;
-    if (!boxId) {
-      const existingByTrack = item.track ? data.boxes.find((box) => String(box.track || "").toLowerCase() === item.track.toLowerCase()) : null;
-      if (existingByTrack) {
-        boxId = existingByTrack.id;
-      } else {
-        const client = item.clientId ? data.clients.find((clientItem) => clientItem.id === item.clientId) : findClientByClientCode(data, item.clientCode);
-        const itemComment = [
-          item.title,
-          item.quantity ? `Количество: ${item.quantity}` : "",
-          item.description,
-          invoice.comment,
-        ].filter(Boolean).join(" · ");
-        const box = {
-          id: makeId("CF", data.boxes.length),
-          track: item.track || `INV-${invoice.number}-${index + 1}`,
-          code: item.title || item.description || "",
-          clientCode: item.clientCode,
-          clientId: client?.id || item.clientId || "",
-          client: client?.name || item.clientName || "Клиент не найден",
-          phone: client?.phone || item.phone || "",
-          telegramId: client?.telegramId || item.telegramId || "",
-          status: "На складе в Китае",
-          place: "Склад Китай",
-          weight: item.weight,
-          dimensions: item.dimensions,
-          route: "Китай -> Казахстан",
-          payment: "Не оплачено",
-          amount: 0,
-          batch: invoice.number,
-          invoiceId: invoice.id,
-          invoiceItemId: item.id,
-          comment: itemComment,
-          createdAt: now,
-          updatedAt: now,
-          owner: input.user || "Оператор",
-        };
-        data.boxes.unshift(box);
-        boxId = box.id;
-        logActivity(data, "Накладная", `${box.id}: товар из накладной ${invoice.number} на складе в Китае`, input.user || "Оператор", box.id);
+    const packageTotal = positiveInt(item.packageCount || "1");
+    const boxIds = [];
+
+    for (let packageIndex = 1; packageIndex <= packageTotal; packageIndex += 1) {
+      const expectedTrack = packageTrack(item, invoice, packageIndex, packageTotal);
+      const existingId = item.boxIds?.[packageIndex - 1] || (packageTotal === 1 ? item.boxId : "");
+      let boxId = existingId;
+
+      if (!boxId) {
+        const existingByInvoicePart = data.boxes.find((box) =>
+          box.invoiceId === invoice.id &&
+          box.invoiceItemId === item.id &&
+          Number(box.packageIndex || 1) === packageIndex,
+        );
+        const existingByTrack = expectedTrack ? data.boxes.find((box) => String(box.track || "").toLowerCase() === expectedTrack.toLowerCase()) : null;
+        if (existingByInvoicePart || existingByTrack) {
+          boxId = (existingByInvoicePart || existingByTrack).id;
+        } else {
+          const client = item.clientId ? data.clients.find((clientItem) => clientItem.id === item.clientId) : findClientByClientCode(data, item.clientCode);
+          const itemComment = [
+            item.title,
+            item.quantity ? "Количество: " + item.quantity : "",
+            packageTotal > 1 ? "Место: " + packageIndex + "/" + packageTotal : "",
+            item.description,
+            invoice.comment,
+          ].filter(Boolean).join(" ? ");
+          const box = {
+            id: makeId("CF", data.boxes.length),
+            track: expectedTrack,
+            code: item.title || item.description || "",
+            clientCode: item.clientCode,
+            clientId: client?.id || item.clientId || "",
+            client: client?.name || item.clientName || "Клиент не найден",
+            phone: client?.phone || item.phone || "",
+            telegramId: client?.telegramId || item.telegramId || "",
+            status: "На складе в Китае",
+            place: "Склад Китай",
+            weight: item.weight,
+            dimensions: item.dimensions,
+            route: "Китай -> Казахстан",
+            payment: "Не оплачено",
+            amount: 0,
+            batch: invoice.number,
+            invoiceId: invoice.id,
+            invoiceItemId: item.id,
+            packageIndex,
+            packageTotal,
+            comment: itemComment,
+            createdAt: now,
+            updatedAt: now,
+            owner: input.user || "Оператор",
+          };
+          data.boxes.unshift(box);
+          boxId = box.id;
+          logActivity(data, "Накладная", box.id + ": создана ожидаемая коробка " + packageIndex + "/" + packageTotal + " по накладной " + invoice.number, input.user || "Оператор", box.id);
+        }
       }
+
+      if (boxId) boxIds.push(boxId);
     }
-    return { ...item, boxId, status: item.clientId ? "На складе в Китае" : "Клиент не найден", confirmedAt: item.confirmedAt || now };
+
+    return {
+      ...item,
+      boxId: boxIds[0] || item.boxId || "",
+      boxIds,
+      packageCount: String(packageTotal),
+      status: item.clientId ? "На складе в Китае" : "Клиент не найден",
+      confirmedAt: item.confirmedAt || now,
+    };
   });
   invoice.items = items;
   invoice.status = "confirmed";
   invoice.confirmedAt = invoice.confirmedAt || now;
   invoice.updatedAt = now;
-  logActivity(data, "Накладная", `Накладная ${invoice.number} подтверждена`, input.user || "Оператор");
+  const createdBoxesCount = items.reduce((sum, item) => sum + (Array.isArray(item.boxIds) ? item.boxIds.length : item.boxId ? 1 : 0), 0);
+  logActivity(data, "Накладная", "Накладная " + invoice.number + " подтверждена, создано коробок: " + createdBoxesCount, input.user || "Оператор");
   writeStore(app, data);
   const cloud = await cloudRequest("/api/admin/invoices/confirm", {
     method: "POST",
@@ -1208,21 +1249,22 @@ async function arriveInvoiceLocal(app, input) {
   if (!invoice) return { ok: false, error: "Накладная не найдена" };
   const now = nowIso();
   invoice.items = (invoice.items || []).map((item) => {
-    if (item.boxId) {
-      const box = data.boxes.find((boxItem) => boxItem.id === item.boxId);
+    const itemBoxIds = Array.isArray(item.boxIds) && item.boxIds.length ? item.boxIds : item.boxId ? [item.boxId] : [];
+    itemBoxIds.forEach((boxId) => {
+      const box = data.boxes.find((boxItem) => boxItem.id === boxId);
       if (box) {
         box.status = "В Астане на складе";
-        box.place = "Склад Астана";
+        box.place = "Склад Китай?";
         box.updatedAt = now;
         box.owner = input.user || "Оператор";
       }
-    }
+    });
     return { ...item, status: "В Астане на складе", arrivedAt: item.arrivedAt || now };
   });
   invoice.status = "arrived";
   invoice.arrivedAt = invoice.arrivedAt || now;
   invoice.updatedAt = now;
-  logActivity(data, "Накладная поступила", `Накладная ${invoice.number} поступила на склад Астаны`, input.user || "Оператор");
+  logActivity(data, "Приемка накладной", "Накладная " + invoice.number + " поступила на склад Астаны", input.user || "Оператор");
   writeStore(app, data);
   const cloud = await cloudRequest("/api/admin/invoices/arrive", {
     method: "POST",

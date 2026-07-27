@@ -230,6 +230,18 @@ function toNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function positiveInt(value: unknown, fallback = 1, max = 99) {
+  const parsed = Math.floor(toNumber(value));
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(parsed, max);
+}
+
+function packageTrack(item: Record<string, unknown>, invoice: Record<string, unknown>, packageIndex: number, packageTotal: number) {
+  const track = String(item.track || "").trim();
+  if (packageTotal <= 1) return track || `INV-${String(invoice.number || invoice.id || "").trim()}-${String(item.id || packageIndex)}`;
+  return track ? `${track}-${packageIndex}` : `INV-${String(invoice.number || invoice.id || "").trim()}-${String(item.id || "ROW")}-${packageIndex}`;
+}
+
 function parsePayload<T>(value: string, fallback: T): T {
   try {
     return JSON.parse(value) as T;
@@ -1444,22 +1456,33 @@ async function resolveInvoiceItem(env: Env, item: Record<string, unknown>) {
     telegramId: client?.telegram_id || String(item.telegramId || ""),
     title: String(item.title || item.name || ""),
     quantity: String(item.quantity || item.qty || "1"),
+    packageCount: String(positiveInt(item.packageCount || item.packages || item.package_count || "1")),
+    boxIds: Array.isArray(item.boxIds) ? item.boxIds.map(String).filter(Boolean) : [],
     matchStatus: client ? "matched" : "not_found",
   };
 }
 
-async function createBoxFromInvoiceItem(env: Env, invoice: Record<string, unknown>, item: Record<string, unknown>) {
+async function createBoxFromInvoiceItem(env: Env, invoice: Record<string, unknown>, item: Record<string, unknown>, packageIndex = 1, packageTotal = 1) {
   const existingBoxes = await listBoxes(env);
-  const track = String(item.track || "").trim();
-  const existingById = String(item.boxId || "") ? existingBoxes.find((box) => box.id === String(item.boxId)) : undefined;
+  const track = packageTrack(item, invoice, packageIndex, packageTotal);
+  const sourceBoxIds = Array.isArray(item.boxIds) ? item.boxIds.map(String).filter(Boolean) : [];
+  const existingId = sourceBoxIds[packageIndex - 1] || (packageTotal === 1 ? String(item.boxId || "") : "");
+  const existingById = existingId ? existingBoxes.find((box) => box.id === existingId) : undefined;
+  const existingByInvoicePart = existingBoxes.find((box) => {
+    const payload = toDesktopBox(box) as Record<string, unknown>;
+    return String(payload.invoiceId || "") === String(invoice.id || "") &&
+      String(payload.invoiceItemId || "") === String(item.id || "") &&
+      Number(payload.packageIndex || 1) === packageIndex;
+  });
   const existingByTrack = track ? existingBoxes.find((box) => box.track.toLowerCase() === track.toLowerCase()) : undefined;
-  if (existingById || existingByTrack) return existingById || existingByTrack;
+  if (existingById || existingByInvoicePart || existingByTrack) return existingById || existingByInvoicePart || existingByTrack;
 
   const client = item.clientId ? await findClient(env, { id: String(item.clientId) }) : await findClient(env, { clientCode: String(item.clientCode || "") });
   const now = nowIso();
   const itemComment = [
     String(item.title || "").trim(),
     String(item.quantity || "").trim() ? `Количество: ${String(item.quantity || "").trim()}` : "",
+    packageTotal > 1 ? `Место: ${packageIndex}/${packageTotal}` : "",
     String(item.description || "").trim(),
     String(invoice.comment || "").trim(),
   ].filter(Boolean).join(" · ");
@@ -1482,6 +1505,8 @@ async function createBoxFromInvoiceItem(env: Env, invoice: Record<string, unknow
     batch: String(invoice.number || invoice.title || invoice.id || ""),
     invoiceId: String(invoice.id || ""),
     invoiceItemId: String(item.id || ""),
+    packageIndex,
+    packageTotal,
     comment: itemComment,
     owner: "Накладная",
     createdAt: now,
@@ -1496,10 +1521,17 @@ async function confirmInvoice(env: Env, invoiceId: string) {
   const resolvedItems = [];
   for (const sourceItem of invoiceItems(invoice)) {
     const item = await resolveInvoiceItem(env, sourceItem);
-    const box = await createBoxFromInvoiceItem(env, invoice, item);
+    const packageTotal = positiveInt(item.packageCount || "1");
+    const boxIds: string[] = [];
+    for (let packageIndex = 1; packageIndex <= packageTotal; packageIndex += 1) {
+      const box = await createBoxFromInvoiceItem(env, invoice, item, packageIndex, packageTotal);
+      if (box?.id) boxIds.push(box.id);
+    }
     resolvedItems.push({
       ...item,
-      boxId: box?.id || item.boxId || "",
+      boxId: boxIds[0] || item.boxId || "",
+      boxIds,
+      packageCount: String(packageTotal),
       status: item.matchStatus === "matched" ? "На складе в Китае" : "Клиент не найден",
       confirmedAt: item.confirmedAt || nowIso(),
     });
@@ -1530,8 +1562,8 @@ async function arriveInvoice(env: Env, invoiceId: string, user = "Менедже
   const now = nowIso();
   const nextItems = [];
   for (const item of invoiceItems(invoice)) {
-    const boxId = String(item.boxId || "");
-    if (boxId) {
+    const itemBoxIds = Array.isArray(item.boxIds) && item.boxIds.length ? item.boxIds.map(String).filter(Boolean) : String(item.boxId || "") ? [String(item.boxId)] : [];
+    for (const boxId of itemBoxIds) {
       const box = await findBox(env, boxId);
       if (box) {
         const payload = toDesktopBox(box);
@@ -1578,19 +1610,21 @@ function invoiceStageInfo(stage: string) {
 
 function invoiceNotificationText(invoice: Record<string, unknown>, client: CflowClient, items: Record<string, unknown>[], stage = "china_warehouse") {
   const stageInfo = invoiceStageInfo(stage);
+  const packagesCount = items.reduce((sum, item) => sum + positiveInt(item.packageCount || "1"), 0);
   const lines = items.map((item, index) => {
     const title = String(item.title || item.description || "").trim();
     const track = String(item.track || item.boxId || `место ${index + 1}`).trim();
     const quantity = String(item.quantity || "").trim();
+    const packageCount = positiveInt(item.packageCount || "1");
     const weight = String(item.weight || "").trim();
-    return `• ${title ? `${escapeHtml(title)} — ` : ""}${escapeHtml(track)}${quantity ? `, ${escapeHtml(quantity)} шт.` : ""}${weight ? `, ${escapeHtml(weight)} кг` : ""}`;
+    return `• ${title ? `${escapeHtml(title)} — ` : ""}${escapeHtml(track)}${quantity ? `, ${escapeHtml(quantity)} шт.` : ""}${packageCount > 1 ? `, мест: ${packageCount}` : ""}${weight ? `, ${escapeHtml(weight)} кг` : ""}`;
   });
   return [
     stageInfo.title,
     "",
     `Клиент: <b>${escapeHtml(client.name)}</b>`,
     `Накладная: <b>${escapeHtml(invoice.number || invoice.id || "")}</b>`,
-    `Количество мест: <b>${items.length}</b>`,
+    `Количество мест: <b>${packagesCount}</b>`,
     "",
     ...lines,
     "",
@@ -1635,14 +1669,17 @@ async function notifyInvoiceClients(env: Env, request: Request, invoiceId: strin
   const now = nowIso();
   for (const item of items) {
     const key = String(item.id || item.boxId || item.track || "");
-    if (!notifiedItemIds.has(key) || !item.boxId) continue;
-    const box = await findBox(env, String(item.boxId));
-    if (!box) continue;
-    await upsertBox(env, {
-      ...toDesktopBox(box),
-      status: stageInfo.status,
-      updatedAt: now,
-    });
+    if (!notifiedItemIds.has(key)) continue;
+    const itemBoxIds = Array.isArray(item.boxIds) && item.boxIds.length ? item.boxIds.map(String).filter(Boolean) : String(item.boxId || "") ? [String(item.boxId)] : [];
+    for (const boxId of itemBoxIds) {
+      const box = await findBox(env, boxId);
+      if (!box) continue;
+      await upsertBox(env, {
+        ...toDesktopBox(box),
+        status: stageInfo.status,
+        updatedAt: now,
+      });
+    }
   }
   const nextItems = items.map((item) => {
     const key = String(item.id || item.boxId || item.track || "");

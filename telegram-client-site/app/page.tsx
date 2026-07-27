@@ -44,6 +44,25 @@ const profileCacheKey = "cflow-client-profile-v3";
 const brandLogo = "/zabota-cargo-logo.png";
 const profilePollMs = 15000;
 const deploymentPollMs = 60000;
+const introSessionKey = "zabota-client-intro-seen";
+
+function shouldShowIntro() {
+  if (typeof window === "undefined") return true;
+  try {
+    return window.sessionStorage.getItem(introSessionKey) !== "1";
+  } catch {
+    return true;
+  }
+}
+
+function markIntroSeen() {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(introSessionKey, "1");
+  } catch {
+    // Telegram WebView can temporarily block session storage; the fallback is just showing the intro again.
+  }
+}
 
 function clientName(user?: TelegramUser) {
   return [user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.username || "";
@@ -117,7 +136,7 @@ export default function ClientMiniApp() {
   const [claim, setClaim] = useState<ClientClaim | null>(null);
   const [hasCheckedProfile, setHasCheckedProfile] = useState(false);
   const [activeTab, setActiveTab] = useState<AppTab>("code");
-  const [showIntro, setShowIntro] = useState(true);
+  const [showIntro, setShowIntro] = useState(shouldShowIntro);
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -304,12 +323,17 @@ export default function ClientMiniApp() {
     await copyText(`Код клиента: ${profile.client.code}\nАдрес склада: ${profile.client.chinaAddress}`, "Код и адрес скопированы");
   }
 
+  function finishIntro() {
+    markIntroSeen();
+    setShowIntro(false);
+  }
+
   if (showIntro) {
     return (
       <main className="client-app intro-app">
         <section className="intro-screen">
-          <video className="intro-video" src="/cflow-intro.mp4" autoPlay muted playsInline preload="auto" onEnded={() => setShowIntro(false)} />
-          <div className="intro-overlay">
+          <video className="intro-video" src="/cflow-intro.mp4" autoPlay muted playsInline preload="auto" onEnded={finishIntro} />
+          <div className="intro-overlay" onClickCapture={finishIntro}>
             <button className="intro-skip" type="button" onClick={() => setShowIntro(false)}>Продолжить</button>
           </div>
         </section>

@@ -2153,6 +2153,13 @@ async function handleManageScanClaim(request: Request, env: Env) {
   return json(result, { status: result.ok ? 200 : 400 });
 }
 
+async function handleAdminScanClaim(request: Request, env: Env) {
+  if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
+  const body = await request.json() as { token?: string; user?: string };
+  const result = await scanClaim(env, String(body.token || ""), String(body.user || "Desktop"));
+  return json(result, { status: result.ok ? 200 : 400 });
+}
+
 async function handleManageIssueClaim(request: Request, env: Env) {
   const body = await request.json() as { initData?: string; token?: string };
   const verified = await verifyManageInitData(body.initData || "", env);
@@ -2274,6 +2281,7 @@ const worker = {
     if (url.pathname === "/api/admin/invoices/arrive" && request.method === "POST") return handleAdminArriveInvoice(request, env);
     if (url.pathname === "/api/admin/invoices/notify" && request.method === "POST") return handleAdminNotifyInvoice(request, env);
     if (url.pathname === "/api/admin/clients/delete" && request.method === "POST") return handleAdminDeleteClient(request, env);
+    if (url.pathname === "/api/admin/claims/scan" && request.method === "POST") return handleAdminScanClaim(request, env);
     if (url.pathname === "/api/admin/telegram-clients/approve" && request.method === "POST") return handleApprove(request, env, ctx);
     if (url.pathname === "/api/manage/me" && request.method === "GET") return handleManageMe(request, env);
     if (url.pathname === "/api/manage/clients" && request.method === "GET") return handleManageClients(request, env);

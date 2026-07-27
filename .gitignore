@@ -44,6 +44,7 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+/backups/
 /telegram-client-site/node_modules/
 /telegram-client-site/dist/
 /telegram-client-site/.vinext/

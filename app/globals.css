@@ -1256,6 +1256,79 @@ h2 {
   font-size: 13px;
 }
 
+.scanner-modal {
+  width: min(100%, 860px);
+}
+
+.scanner-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f6f8fb;
+  padding: 6px;
+}
+
+.scanner-tabs button {
+  min-height: 42px;
+  border: 0;
+  background: transparent;
+}
+
+.scanner-tabs button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.scanner-form {
+  display: grid;
+  gap: 12px;
+}
+
+.scanner-form textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 96px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--foreground);
+  padding: 12px;
+  font-family: var(--font-mono), monospace;
+}
+
+.scanner-result {
+  display: grid;
+  gap: 14px;
+}
+
+.scanner-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.scanner-status.ready {
+  border-color: rgba(22, 163, 74, 0.22);
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.scanner-status.blocked {
+  border-color: rgba(220, 38, 38, 0.22);
+  background: rgba(220, 38, 38, 0.08);
+}
+
+.scanner-status span {
+  color: var(--muted);
+  font-family: var(--font-mono), monospace;
+  font-size: 13px;
+}
+
 .client-app {
   min-height: 100vh;
   background: #f4f6fb;

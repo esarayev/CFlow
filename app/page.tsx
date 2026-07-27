@@ -197,6 +197,26 @@ type ApiResult = {
   sync?: { status: string; pulledClients?: number };
 };
 
+type ClientQrScanResult = {
+  ok: boolean;
+  error?: string;
+  status?: { ok: boolean; code: string; text: string };
+  client?: ClientItem | null;
+  boxes?: BoxItem[];
+};
+
+type BoxScanResult = {
+  ok: boolean;
+  error?: string;
+  scannedCode?: string;
+  box?: BoxItem | null;
+  invoice?: Invoice | null;
+  item?: InvoiceItem | null;
+  client?: ClientItem | null;
+  canAccept?: boolean;
+  message?: string;
+};
+
 type CurrencyRatesResult = {
   ok: boolean;
   error?: string;
@@ -217,6 +237,7 @@ type ApplyResultOptions = {
 type ActionMode = "receive" | "issue" | "move" | "client" | "shipment" | "payment" | "problem" | "status";
 type DashboardPanel = "codes" | "address" | null;
 type DetailModalState = { type: "box"; id: string } | { type: "client"; id: string } | null;
+type ScannerMode = "clientQr" | "boxCode";
 type CurrencyPairId = "USD_KZT" | "CNY_KZT" | "USD_CNY" | "KZT_USD" | "KZT_CNY" | "CNY_USD";
 type CurrencyCode = "USD" | "KZT" | "CNY";
 
@@ -263,6 +284,9 @@ declare global {
     cflowData?: {
       snapshot: (payload: Record<string, unknown>) => Promise<ApiResult>;
       receiveBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      scanClientQr: (payload: Record<string, unknown>) => Promise<ClientQrScanResult>;
+      scanBoxCode: (payload: Record<string, unknown>) => Promise<BoxScanResult>;
+      acceptScannedBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
       moveBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
       issueBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
       updateStatus: (payload: Record<string, unknown>) => Promise<ApiResult>;
@@ -645,6 +669,12 @@ export default function Home() {
   const [sessionToken, setSessionToken] = useState("");
   const [detailModal, setDetailModal] = useState<DetailModalState>(null);
   const [dashboardPanel, setDashboardPanel] = useState<DashboardPanel>(null);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerMode, setScannerMode] = useState<ScannerMode>("clientQr");
+  const [scannerInput, setScannerInput] = useState("");
+  const [clientQrScan, setClientQrScan] = useState<ClientQrScanResult | null>(null);
+  const [boxScan, setBoxScan] = useState<BoxScanResult | null>(null);
+  const [scannerBusy, setScannerBusy] = useState(false);
   const [addressInput, setAddressInput] = useState(defaultChinaAddress);
   const [loginName, setLoginName] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -1127,6 +1157,65 @@ export default function Home() {
     setNotice("Сканер готов: отсканируйте трек сразу в поле приемки");
   }
 
+  function openScannerModal(mode: ScannerMode) {
+    setScannerMode(mode);
+    setScannerInput("");
+    setClientQrScan(null);
+    setBoxScan(null);
+    setScannerOpen(true);
+    setError("");
+    setNotice("");
+  }
+
+  async function submitScanner(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+    const code = scannerInput.trim();
+    if (!code) {
+      setError(scannerMode === "clientQr" ? "Отсканируйте QR клиента" : "Отсканируйте штрихкод или трек коробки");
+      return;
+    }
+    setScannerBusy(true);
+    setError("");
+    try {
+      if (scannerMode === "clientQr") {
+        const result = await window.cflowData.scanClientQr(securePayload({ token: code }));
+        setClientQrScan(result);
+        setBoxScan(null);
+        if (!result.ok) setError(result.error || "QR не прошел проверку");
+        else setNotice(result.status?.text || "QR клиента проверен");
+        return;
+      }
+      const result = await window.cflowData.scanBoxCode(securePayload({ code }));
+      setBoxScan(result);
+      setClientQrScan(null);
+      if (!result.ok) setError(result.error || "Позиция не найдена");
+      else setNotice(result.message || "Позиция найдена");
+    } finally {
+      setScannerBusy(false);
+    }
+  }
+
+  async function acceptScannedBox(boxId: string) {
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+    const result = await runApi(
+      window.cflowData.acceptScannedBox(securePayload({ boxId, place: "Склад Астана" })),
+      "Коробка добавлена на склад Астаны",
+    );
+    if (result.ok) {
+      setScannerOpen(false);
+      setBoxScan(null);
+      setClientQrScan(null);
+      setSelectedId(boxId);
+    }
+  }
+
   async function deleteBox(boxId: string) {
     if (!window.cflowData) {
       setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
@@ -1419,6 +1508,8 @@ export default function Home() {
                   <span>{warehouseAddress ? "Адрес склада задан" : "Адрес склада не задан"}</span>
                 </div>
                 <div className="scan-card-actions">
+                  <button type="button" onClick={() => openScannerModal("clientQr")}>QR клиента</button>
+                  <button type="button" onClick={() => openScannerModal("boxCode")}>Прием коробки</button>
                   <button type="button" onClick={() => setDashboardPanel("codes")}>Схема кодов</button>
                   <button type="button" onClick={() => setDashboardPanel("address")}>Адрес склада</button>
                 </div>
@@ -1507,6 +1598,27 @@ export default function Home() {
             <SettingsPanel />
           </section>
         ) : null}
+        {scannerOpen ? (
+          <ScannerModal
+            mode={scannerMode}
+            input={scannerInput}
+            busy={scannerBusy}
+            clientQrScan={clientQrScan}
+            boxScan={boxScan}
+            onModeChange={(mode) => {
+              setScannerMode(mode);
+              setScannerInput("");
+              setClientQrScan(null);
+              setBoxScan(null);
+              setError("");
+            }}
+            onInputChange={setScannerInput}
+            onSubmit={submitScanner}
+            onClose={() => setScannerOpen(false)}
+            onAcceptBox={acceptScannedBox}
+            onOpenBox={openBoxDetail}
+          />
+        ) : null}
         {detailModal ? (
           <DetailModal
             box={modalBox}
@@ -1527,6 +1639,114 @@ export default function Home() {
         ) : null}
       </section>
     </main>
+  );
+}
+
+function ScannerModal({
+  mode,
+  input,
+  busy,
+  clientQrScan,
+  boxScan,
+  onModeChange,
+  onInputChange,
+  onSubmit,
+  onClose,
+  onAcceptBox,
+  onOpenBox,
+}: {
+  mode: ScannerMode;
+  input: string;
+  busy: boolean;
+  clientQrScan: ClientQrScanResult | null;
+  boxScan: BoxScanResult | null;
+  onModeChange: (mode: ScannerMode) => void;
+  onInputChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onClose: () => void;
+  onAcceptBox: (boxId: string) => void;
+  onOpenBox: (boxId: string) => void;
+}) {
+  const clientBoxes = clientQrScan?.boxes || [];
+  const scannedBox = boxScan?.box || null;
+  const scannedClient = boxScan?.client || null;
+  const scannedItem = boxScan?.item || null;
+  const scannedInvoice = boxScan?.invoice || null;
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="modal-card scanner-modal" role="dialog" aria-modal="true" aria-label="Сканер склада" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <span className="eyebrow">Складской сканер</span>
+            <h2>{mode === "clientQr" ? "QR клиента" : "Прием коробки по коду"}</h2>
+          </div>
+          <button type="button" onClick={onClose}>Закрыть</button>
+        </div>
+        <div className="scanner-tabs" role="tablist" aria-label="Режим сканера">
+          <button className={mode === "clientQr" ? "active" : ""} type="button" onClick={() => onModeChange("clientQr")}>QR клиента</button>
+          <button className={mode === "boxCode" ? "active" : ""} type="button" onClick={() => onModeChange("boxCode")}>Прием коробки</button>
+        </div>
+        <form className="scanner-form" onSubmit={onSubmit}>
+          <label>
+            {mode === "clientQr" ? "QR-токен клиента" : "Штрихкод / трек / номер коробки"}
+            <textarea
+              autoFocus
+              value={input}
+              onChange={(event) => onInputChange(event.target.value)}
+              placeholder={mode === "clientQr" ? "Отсканируйте QR клиента" : "Отсканируйте код на коробке"}
+              rows={4}
+            />
+          </label>
+          <button className="primary" type="submit" disabled={busy || !input.trim()}>{busy ? "Проверяю..." : "Проверить"}</button>
+        </form>
+        {mode === "clientQr" && clientQrScan?.ok ? (
+          <div className="scanner-result">
+            <div className={`scanner-status ${clientQrScan.status?.ok ? "ready" : "blocked"}`}>
+              <strong>{clientQrScan.status?.text || "QR проверен"}</strong>
+              <span>{clientBoxes.length} посылок в QR</span>
+            </div>
+            <dl className="details-list modal-list">
+              <div><dt>Клиент</dt><dd>{clientQrScan.client?.name || "Не найден"}</dd></div>
+              <div><dt>Код клиента</dt><dd>{clientQrScan.client?.clientCode || "Не указан"}</dd></div>
+              <div><dt>Телефон</dt><dd>{clientQrScan.client?.phone || "Не указан"}</dd></div>
+            </dl>
+            <div className="modal-section">
+              <h3>Посылки</h3>
+              {clientBoxes.map((box) => (
+                <button className="box-row modal-box-row" type="button" key={box.id} onClick={() => onOpenBox(box.id)}>
+                  <strong>{box.id}</strong>
+                  <span>{box.track || box.code || "Без трека"} · {box.client}</span>
+                  <em>{box.status}</em>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        {mode === "boxCode" && boxScan?.ok ? (
+          <div className="scanner-result">
+            <div className={`scanner-status ${boxScan.canAccept ? "ready" : "blocked"}`}>
+              <strong>{boxScan.message || "Позиция найдена"}</strong>
+              <span>{boxScan.scannedCode}</span>
+            </div>
+            <dl className="details-list modal-list">
+              <div><dt>Клиент</dt><dd>{scannedClient?.name || scannedBox?.client || scannedItem?.clientName || "Не найден"}</dd></div>
+              <div><dt>Код клиента</dt><dd>{scannedClient?.clientCode || scannedBox?.clientCode || scannedItem?.clientCode || "Не указан"}</dd></div>
+              <div><dt>Накладная</dt><dd>{scannedInvoice?.number || scannedBox?.batch || "Не найдена"}</dd></div>
+              <div><dt>Позиция</dt><dd>{scannedItem?.title || scannedBox?.code || "Без названия"}</dd></div>
+              <div><dt>Трек</dt><dd>{scannedBox?.track || scannedItem?.track || "Не указан"}</dd></div>
+              <div><dt>Коробка</dt><dd>{scannedBox?.id || "Не создана"}</dd></div>
+              <div><dt>Статус</dt><dd>{scannedBox?.status || scannedItem?.status || "Не указан"}</dd></div>
+              <div><dt>Вес</dt><dd>{scannedBox?.weight || scannedItem?.weight || "Не указан"}</dd></div>
+            </dl>
+            <div className="form-actions">
+              {scannedBox ? <button type="button" onClick={() => onOpenBox(scannedBox.id)}>Открыть карточку</button> : null}
+              {scannedBox && boxScan.canAccept ? <button className="primary" type="button" onClick={() => onAcceptBox(scannedBox.id)}>Добавить в склад</button> : null}
+            </div>
+          </div>
+        ) : null}
+      </section>
+    </div>
   );
 }
 

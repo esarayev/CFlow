@@ -45,6 +45,48 @@ function checksumJson(value) {
   return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
+const russianKeyboardToEnglish = {
+  й: "q", ц: "w", у: "e", к: "r", е: "t", н: "y", г: "u", ш: "i", щ: "o", з: "p", х: "[", ъ: "]",
+  ф: "a", ы: "s", в: "d", а: "f", п: "g", р: "h", о: "j", л: "k", д: "l", ж: ";", э: "'",
+  я: "z", ч: "x", с: "c", м: "v", и: "b", т: "n", ь: "m", б: ",", ю: ".", ".": "/",
+  Й: "Q", Ц: "W", У: "E", К: "R", Е: "T", Н: "Y", Г: "U", Ш: "I", Щ: "O", З: "P", Х: "{", Ъ: "}",
+  Ф: "A", Ы: "S", В: "D", А: "F", П: "G", Р: "H", О: "J", Л: "K", Д: "L", Ж: ":", Э: "\"",
+  Я: "Z", Ч: "X", С: "C", М: "V", И: "B", Т: "N", Ь: "M", Б: "<", Ю: ">", ",": "?",
+};
+
+function normalizeScannedText(value) {
+  const clean = String(value || "").trim();
+  if (clean.startsWith("ZBC:CLAIM:v1:")) return clean;
+  return clean.replace(/[А-Яа-яЁё.,]/g, (char) => russianKeyboardToEnglish[char] || char);
+}
+
+function base64UrlDecodeJson(value) {
+  const normalized = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+}
+
+function signClaimPayloadLocal(secret, encoded) {
+  return crypto.createHmac("sha256", String(secret || "")).update(String(encoded || "")).digest("hex").slice(0, 32);
+}
+
+function verifyClaimTokenLocal(token) {
+  const { adminToken } = cloudConfig();
+  if (!adminToken) return { ok: false, error: "CFLOW_ADMIN_TOKEN не задан, QR нельзя проверить безопасно" };
+  const cleanToken = normalizeScannedText(token);
+  const prefix = "ZBC:CLAIM:v1:";
+  if (!cleanToken.startsWith(prefix)) return { ok: false, error: "Это не QR Zabota GO" };
+  const [encoded, signature] = cleanToken.slice(prefix.length).split(".");
+  if (!encoded || !signature) return { ok: false, error: "QR поврежден" };
+  const expected = signClaimPayloadLocal(adminToken, encoded);
+  if (signature !== expected) return { ok: false, error: "QR недействителен или поврежден" };
+  try {
+    return { ok: true, payload: base64UrlDecodeJson(encoded), token: cleanToken };
+  } catch {
+    return { ok: false, error: "QR поврежден" };
+  }
+}
+
 function displayTime(iso = nowIso()) {
   return new Intl.DateTimeFormat("ru-RU", {
     hour: "2-digit",
@@ -968,6 +1010,134 @@ function receiveBox(app, input) {
   return publicSnapshot(app);
 }
 
+function scanClientQr(app, input) {
+  const data = readStore(app);
+  const verified = verifyClaimTokenLocal(input.token || input.qr || input.code || "");
+  if (!verified.ok) return verified;
+  const payload = verified.payload || {};
+  const clientId = String(payload.clientId || "");
+  const boxIds = Array.isArray(payload.boxIds) ? payload.boxIds.map(String).filter(Boolean) : [];
+  if (!clientId || !boxIds.length) return { ok: false, error: "QR не содержит клиента или посылки" };
+  const client = data.clients.find((item) => item.id === clientId);
+  const boxes = data.boxes.filter((box) => boxIds.includes(String(box.id || "")) && String(box.clientId || "") === clientId);
+  const lowerStatuses = boxes.map((box) => String(box.status || "").toLowerCase());
+  const ready = boxes.length > 0 && lowerStatuses.some((status) => status.includes("астан") || status.includes("готов") || status.includes("ждет"));
+  const allDelivered = boxes.length > 0 && lowerStatuses.every((status) => status.includes("выдан"));
+  const status = allDelivered
+    ? { ok: false, code: "delivered", text: "Товар уже выдан" }
+    : ready
+      ? { ok: true, code: "ready", text: "Можно выдавать" }
+      : { ok: false, code: boxes.length ? "not_arrived" : "not_found", text: boxes.length ? "Товар еще не поступил на склад выдачи" : "Товар по QR не найден" };
+  logActivity(data, "QR клиента", `${client?.name || "Клиент"} предъявил QR: ${status.text}`, input.user || "Оператор");
+  writeStore(app, data);
+  return {
+    ok: true,
+    token: verified.token,
+    payload,
+    status,
+    client: client || null,
+    boxes,
+  };
+}
+
+function scannedCodeMatches(value, query) {
+  const left = String(value || "").trim().toLowerCase();
+  const right = String(query || "").trim().toLowerCase();
+  return Boolean(left && right && left === right);
+}
+
+function findInvoiceItemByBox(data, box) {
+  if (!box) return { invoice: null, item: null };
+  const invoice = data.invoices.find((entry) => entry.id === box.invoiceId || entry.number === box.batch);
+  const item = invoice?.items?.find((entry) =>
+    entry.id === box.invoiceItemId ||
+    entry.boxId === box.id ||
+    (Array.isArray(entry.boxIds) && entry.boxIds.includes(box.id)) ||
+    scannedCodeMatches(entry.track, box.track),
+  );
+  return { invoice: invoice || null, item: item || null };
+}
+
+function scanBoxCode(app, input) {
+  const data = readStore(app);
+  const rawCode = normalizeScannedText(input.code || input.track || input.qr || "");
+  const code = String(rawCode || "").trim();
+  if (!code) return { ok: false, error: "Отсканируйте штрихкод, трек или номер коробки" };
+
+  let box = data.boxes.find((item) =>
+    scannedCodeMatches(item.id, code) ||
+    scannedCodeMatches(item.track, code) ||
+    scannedCodeMatches(item.code, code),
+  );
+  let invoice = null;
+  let item = null;
+
+  if (box) {
+    const found = findInvoiceItemByBox(data, box);
+    invoice = found.invoice;
+    item = found.item;
+  } else {
+    for (const candidateInvoice of data.invoices) {
+      const candidateItem = (candidateInvoice.items || []).find((entry) =>
+        scannedCodeMatches(entry.track, code) ||
+        scannedCodeMatches(entry.id, code) ||
+        scannedCodeMatches(entry.title, code),
+      );
+      if (candidateItem) {
+        invoice = candidateInvoice;
+        item = candidateItem;
+        const ids = Array.isArray(candidateItem.boxIds) ? candidateItem.boxIds : candidateItem.boxId ? [candidateItem.boxId] : [];
+        box = data.boxes.find((entry) => ids.includes(entry.id) || scannedCodeMatches(entry.track, candidateItem.track));
+        break;
+      }
+    }
+  }
+
+  if (!box && !item) return { ok: false, error: "Позиция по этому коду не найдена в накладных" };
+  const client = data.clients.find((entry) =>
+    entry.id === (box?.clientId || item?.clientId) ||
+    scannedCodeMatches(entry.clientCode, box?.clientCode || item?.clientCode) ||
+    scannedCodeMatches(entry.phone, box?.phone || item?.phone),
+  ) || null;
+
+  return {
+    ok: true,
+    scannedCode: code,
+    box: box || null,
+    invoice,
+    item,
+    client,
+    canAccept: Boolean(box),
+    message: box ? "Позиция найдена, можно добавить на склад" : "Позиция найдена, но коробка еще не создана. Сначала подтвердите накладную.",
+  };
+}
+
+async function acceptScannedBox(app, input) {
+  const data = readStore(app);
+  const boxId = String(input.boxId || "").trim();
+  if (!boxId) return { ok: false, error: "Не выбрана коробка для приемки" };
+  const box = data.boxes.find((item) => item.id === boxId);
+  if (!box) return { ok: false, error: "Коробка не найдена" };
+  const now = nowIso();
+  box.status = "В Астане на складе";
+  box.place = String(input.place || "Склад Астана").trim();
+  box.updatedAt = now;
+  box.owner = input.user || "Оператор";
+  const found = findInvoiceItemByBox(data, box);
+  if (found.invoice && found.item) {
+    found.item.status = "В Астане на складе";
+    found.item.arrivedAt = found.item.arrivedAt || now;
+    found.invoice.updatedAt = now;
+  }
+  logActivity(data, "Приемка по сканеру", `${box.id}: поступила на склад Астаны по скану ${box.track || box.code || ""}`, input.user || "Оператор", box.id);
+  writeStore(app, data);
+  await cloudRequest("/api/admin/boxes/upsert", {
+    method: "POST",
+    body: JSON.stringify({ box }),
+  });
+  return publicSnapshot(app);
+}
+
 function updateBox(app, boxId, patch, title, user) {
   const data = readStore(app);
   const index = data.boxes.findIndex((box) => box.id === boxId);
@@ -1398,6 +1568,9 @@ function registerCflowIpc(ipcMain, app) {
   ipcMain.handle("cflow-data:snapshot", (_event, payload) => withPermission(app, payload, "search", () => publicSnapshot(app)));
   ipcMain.handle("cflow-data:create-backup", (_event, payload) => withPermission(app, payload, "all", () => createBackup(app, "manual")));
   ipcMain.handle("cflow-data:receive-box", (_event, payload) => withPermission(app, payload, "receive_box", (input) => receiveBox(app, input)));
+  ipcMain.handle("cflow-data:scan-client-qr", (_event, payload) => withPermission(app, payload, "issue_box", (input) => scanClientQr(app, input)));
+  ipcMain.handle("cflow-data:scan-box-code", (_event, payload) => withPermission(app, payload, "receive_box", (input) => scanBoxCode(app, input)));
+  ipcMain.handle("cflow-data:accept-scanned-box", (_event, payload) => withPermission(app, payload, "receive_box", (input) => acceptScannedBox(app, input)));
   ipcMain.handle("cflow-data:move-box", (_event, payload) => withPermission(app, payload, "move_box", (input) => moveBox(app, input)));
   ipcMain.handle("cflow-data:issue-box", (_event, payload) => withPermission(app, payload, "issue_box", (input) => issueBox(app, input)));
   ipcMain.handle("cflow-data:update-status", (_event, payload) => withPermission(app, payload, "warehouse", (input) => updateStatus(app, input)));

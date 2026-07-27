@@ -347,6 +347,25 @@ h2 {
   align-items: center;
 }
 
+.dashboard-page-header {
+  align-items: start;
+}
+
+.dashboard-header-flow {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-width: 0;
+}
+
+.dashboard-header-flow .lead {
+  margin-bottom: 0;
+}
+
+.dashboard-page > .metrics-grid {
+  display: none;
+}
+
 .scan-card {
   display: grid;
   align-content: start;

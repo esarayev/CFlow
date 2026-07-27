@@ -1522,11 +1522,22 @@ export default function Home() {
         {notice ? <p className="app-notice">{notice}</p> : null}
         {error ? <p className="app-error">{error}</p> : null}
 
-        <section className="page-header">
-          <div>
+        <section className={activeNav === "Dashboard" ? "page-header dashboard-page-header" : "page-header"}>
+          <div className={activeNav === "Dashboard" ? "dashboard-header-flow" : ""}>
             <p className="eyebrow">{activeNav}</p>
             <h1>{currentPage.title}</h1>
             <p className="lead">{currentPage.lead}</p>
+            {activeNav === "Dashboard" ? (
+              <section className="metrics-grid" aria-label="Ключевые показатели">
+                {metrics.map((metric) => (
+                  <article className={`metric ${metric.tone}`} key={metric.label}>
+                    <span>{metric.label}</span>
+                    <strong>{metric.value}</strong>
+                    <p>{metric.delta}</p>
+                  </article>
+                ))}
+              </section>
+            ) : null}
           </div>
           {activeNav === "Dashboard" ? (
             <div className="dashboard-side-widgets">

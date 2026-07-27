@@ -1175,7 +1175,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
   object-fit: contain;
   object-position: center;
   background: transparent;
-  transform: translateY(-1px);
+  transform: translateY(-3px);
 }
 
 .neu-mini-head strong {

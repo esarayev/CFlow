@@ -156,7 +156,7 @@ async function createClaimToken(env: Env, payload: Record<string, unknown>) {
 async function verifyClaimToken(env: Env, token: string) {
   const cleanToken = String(token || "").trim();
   const prefix = "ZBC:CLAIM:v1:";
-  if (!cleanToken.startsWith(prefix)) return { ok: false as const, error: "Это не QR Zabota Cargo" };
+  if (!cleanToken.startsWith(prefix)) return { ok: false as const, error: "Это не QR Zabota GO" };
   const [encoded, signature] = cleanToken.slice(prefix.length).split(".");
   if (!encoded || !signature) return { ok: false as const, error: "QR поврежден" };
   const expected = await signClaimPayload(env, encoded);
@@ -445,12 +445,12 @@ async function verifyManageInitData(initData: string, env: Env) {
     .filter(Boolean);
   const username = normalizeTelegramUsername(verified.user.username || "");
   if (!username) {
-    return { ok: false as const, error: "Нет доступа к управлению ZABOTA CARGO" };
+    return { ok: false as const, error: "Нет доступа к управлению Zabota GO" };
   }
   if (allowed.includes(username)) return verified;
   const staff = await findActiveStaffByTelegram(env, username);
   if (!canUseManageMiniApp(staff)) {
-    return { ok: false as const, error: "Нет доступа к управлению ZABOTA CARGO" };
+    return { ok: false as const, error: "Нет доступа к управлению Zabota GO" };
   }
   return { ...verified, staff: staff ? toDesktopStaff(staff) : null };
 }
@@ -1227,7 +1227,7 @@ function clientWebAppUrl(request: Request, env: Env) {
 function telegramReplyKeyboard(webAppUrl: string) {
   return {
     inline_keyboard: [[
-      { text: "Открыть кабинет ZABOTA CARGO", web_app: { url: webAppUrl } },
+      { text: "Открыть кабинет Zabota GO", web_app: { url: webAppUrl } },
     ]],
   };
 }
@@ -1265,7 +1265,7 @@ async function sendClientLaunchMessage(env: Env, chatId: string | number, webApp
   return await telegramApi(env, "sendMessage", {
     chat_id: chatId,
     text: [
-      "Добро пожаловать в ZABOTA CARGO.",
+      "Добро пожаловать в Zabota GO.",
       "",
       "Нажмите кнопку ниже, чтобы открыть личный кабинет, пройти регистрацию, получить код клиента и смотреть статусы посылок.",
     ].join("\n"),
@@ -2084,7 +2084,7 @@ async function handleConfigure(request: Request, env: Env) {
     const clientResponse = await fetch(`https://api.telegram.org/bot${env.CFLOW_TELEGRAM_BOT_TOKEN}/setChatMenuButton`, {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ menu_button: { type: "web_app", text: "ZABOTA CARGO", web_app: { url: clientWebAppUrl } } }),
+      body: JSON.stringify({ menu_button: { type: "web_app", text: "Zabota GO", web_app: { url: clientWebAppUrl } } }),
     });
     const webhookResponse = await fetch(`https://api.telegram.org/bot${env.CFLOW_TELEGRAM_BOT_TOKEN}/setWebhook`, {
       method: "POST",
@@ -2102,7 +2102,7 @@ async function handleConfigure(request: Request, env: Env) {
     const manageResponse = await fetch(`https://api.telegram.org/bot${env.CFLOW_MANAGE_TELEGRAM_BOT_TOKEN}/setChatMenuButton`, {
       method: "POST",
       headers: { "content-type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ menu_button: { type: "web_app", text: "ZABOTA CARGO", web_app: { url: manageWebAppUrl } } }),
+      body: JSON.stringify({ menu_button: { type: "web_app", text: "Zabota GO", web_app: { url: manageWebAppUrl } } }),
     });
     results.manage = await manageResponse.json();
   }

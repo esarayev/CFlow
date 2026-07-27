@@ -153,7 +153,7 @@ export default function ManageMiniApp() {
       }
       if (isMounted) {
         setIsLoading(false);
-        setError("Откройте управление через Telegram-бот ZABOTA CARGO.");
+        setError("Откройте управление через Telegram-бот Zabota GO.");
       }
     };
 
@@ -500,7 +500,7 @@ export default function ManageMiniApp() {
   return (
     <main className="client-app manage-app">
       <header className="client-shell-head">
-        <div className="brand-logo brand-logo-manage"><img src="/zabota-cargo-logo.png" alt="ZABOTA CARGO" /></div>
+        <div className="brand-logo brand-logo-manage"><img src="/zabota-cargo-logo.png" alt="Zabota GO" /></div>
         <span className="client-pill">{clients.length} всего</span>
       </header>
 
@@ -735,7 +735,7 @@ export default function ManageMiniApp() {
                 {broadcastDraft.title.trim() ? <strong>{broadcastDraft.title.trim()}</strong> : null}
                 {broadcastDraft.message.trim() ? <p>{broadcastDraft.message.trim()}</p> : <p>Текст сообщения появится здесь.</p>}
               </div>
-              <small>В Telegram сообщение уйдет от клиентского бота ZABOTA CARGO. Клиенты смогут открыть кабинет через кнопку под сообщением.</small>
+              <small>В Telegram сообщение уйдет от клиентского бота Zabota GO. Клиенты смогут открыть кабинет через кнопку под сообщением.</small>
             </article>
           </section>
         )}

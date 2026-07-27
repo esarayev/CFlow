@@ -269,11 +269,6 @@ export default function ClientMiniApp() {
   }, []);
 
   const client = profile.client;
-  const latestStage = useMemo(() => {
-    const stage = profile.boxes[0]?.stage || "china_warehouse";
-    return stageLabels[stage];
-  }, [profile.boxes]);
-
   function submitRegistration(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsLoading(true);
@@ -348,7 +343,7 @@ export default function ClientMiniApp() {
 
   return (
     <main className="client-app neu-app confirmed">
-      <Header activeTab={activeTab} name={client?.name || "Клиент"} latestStage={latestStage.title} />
+      <Header name={client?.name || "Клиент"} />
       <section className="neu-scroll">
         {notice ? <p className="neu-toast inline">{notice}</p> : null}
         {error ? <p className="neu-error">{error}</p> : null}
@@ -417,7 +412,7 @@ function PendingScreen({ name, phone, notice, error, isLoading }: { name: string
     <section className="neu-pending slide-up">
       <div className="neu-mini-head">
         <BrandMark />
-        <div><span>ZABOTA CARGO</span><strong>Привет, {name.split(" ")[0] || "клиент"}!</strong></div>
+        <div><span>Zabota GO</span><strong>Привет, {name.split(" ")[0] || "клиент"}!</strong></div>
       </div>
       <article className="neu-card pending-card">
         <div className="neu-logo wait float">⏳</div>
@@ -439,14 +434,13 @@ function PendingScreen({ name, phone, notice, error, isLoading }: { name: string
   );
 }
 
-function Header({ activeTab, name, latestStage }: { activeTab: AppTab; name: string; latestStage: string }) {
+function Header({ name }: { name: string }) {
   return (
     <header className="neu-header">
       <div className="neu-mini-head">
         <BrandMark />
-        <div><span>ZABOTA CARGO</span><strong>{name.split(" ")[0] || "Клиент"}</strong></div>
+        <div><span>Zabota GO</span><strong>{name.split(" ")[0] || "Клиент"}</strong></div>
       </div>
-      <div className="neu-header-pill">{activeTab === "code" ? "Мой код" : latestStage}</div>
     </header>
   );
 }
@@ -454,7 +448,7 @@ function Header({ activeTab, name, latestStage }: { activeTab: AppTab; name: str
 function BrandLogoBlock({ subtitle }: { subtitle: string }) {
   return (
     <div className="neu-logo-block">
-      <img className="zabota-logo-full" src={brandLogo} alt="ZABOTA CARGO" />
+      <img className="zabota-logo-full" src={brandLogo} alt="Zabota GO" />
       <span>{subtitle}</span>
     </div>
   );

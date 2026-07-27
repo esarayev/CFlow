@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("cflowData", {
   scanClientQr: (payload) => ipcRenderer.invoke("cflow-data:scan-client-qr", payload),
   scanBoxCode: (payload) => ipcRenderer.invoke("cflow-data:scan-box-code", payload),
   acceptScannedBox: (payload) => ipcRenderer.invoke("cflow-data:accept-scanned-box", payload),
+  issueScannedBox: (payload) => ipcRenderer.invoke("cflow-data:issue-scanned-box", payload),
   moveBox: (payload) => ipcRenderer.invoke("cflow-data:move-box", payload),
   issueBox: (payload) => ipcRenderer.invoke("cflow-data:issue-box", payload),
   updateStatus: (payload) => ipcRenderer.invoke("cflow-data:update-status", payload),

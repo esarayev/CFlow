@@ -287,6 +287,7 @@ declare global {
       scanClientQr: (payload: Record<string, unknown>) => Promise<ClientQrScanResult>;
       scanBoxCode: (payload: Record<string, unknown>) => Promise<BoxScanResult>;
       acceptScannedBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
+      issueScannedBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
       moveBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
       issueBox: (payload: Record<string, unknown>) => Promise<ApiResult>;
       updateStatus: (payload: Record<string, unknown>) => Promise<ApiResult>;
@@ -1216,6 +1217,26 @@ export default function Home() {
     }
   }
 
+  async function issueScannedBox(box: BoxItem) {
+    if (!window.cflowData) {
+      setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
+      return;
+    }
+    const confirmed = window.confirm(`Выдать посылку ${box.id} клиенту ${box.client}? После выдачи она уйдет из активного склада.`);
+    if (!confirmed) return;
+
+    const result = await runApi(
+      window.cflowData.issueScannedBox(securePayload({ boxId: box.id })),
+      "Посылка выдана клиенту",
+    );
+    if (result.ok) {
+      setScannerOpen(false);
+      setBoxScan(null);
+      setClientQrScan(null);
+      setSelectedId(box.id);
+    }
+  }
+
   async function deleteBox(boxId: string) {
     if (!window.cflowData) {
       setError("База CFlow не подключена. Запустите приложение с рабочего стола.");
@@ -1616,6 +1637,7 @@ export default function Home() {
             onSubmit={submitScanner}
             onClose={() => setScannerOpen(false)}
             onAcceptBox={acceptScannedBox}
+            onIssueBox={issueScannedBox}
             onOpenBox={openBoxDetail}
           />
         ) : null}
@@ -1653,6 +1675,7 @@ function ScannerModal({
   onSubmit,
   onClose,
   onAcceptBox,
+  onIssueBox,
   onOpenBox,
 }: {
   mode: ScannerMode;
@@ -1665,6 +1688,7 @@ function ScannerModal({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onClose: () => void;
   onAcceptBox: (boxId: string) => void;
+  onIssueBox: (box: BoxItem) => void;
   onOpenBox: (boxId: string) => void;
 }) {
   const clientBoxes = clientQrScan?.boxes || [];
@@ -1672,6 +1696,7 @@ function ScannerModal({
   const scannedClient = boxScan?.client || null;
   const scannedItem = boxScan?.item || null;
   const scannedInvoice = boxScan?.invoice || null;
+  const scannedBoxIssued = String(scannedBox?.status || "").trim().toLowerCase().includes("выдан");
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -1742,6 +1767,7 @@ function ScannerModal({
             <div className="form-actions">
               {scannedBox ? <button type="button" onClick={() => onOpenBox(scannedBox.id)}>Открыть карточку</button> : null}
               {scannedBox && boxScan.canAccept ? <button className="primary" type="button" onClick={() => onAcceptBox(scannedBox.id)}>Добавить в склад</button> : null}
+              {scannedBox && !scannedBoxIssued ? <button className="danger" type="button" onClick={() => onIssueBox(scannedBox)}>Выдать</button> : null}
             </div>
           </div>
         ) : null}

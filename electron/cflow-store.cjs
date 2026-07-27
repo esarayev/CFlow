@@ -1138,6 +1138,38 @@ async function acceptScannedBox(app, input) {
   return publicSnapshot(app);
 }
 
+async function issueScannedBox(app, input) {
+  const data = readStore(app);
+  const boxId = String(input.boxId || "").trim();
+  if (!boxId) return { ok: false, error: "Выберите коробку для выдачи" };
+  const box = data.boxes.find((item) => item.id === boxId);
+  if (!box) return { ok: false, error: "Коробка не найдена" };
+  if (String(box.status || "").trim().toLowerCase().includes("выдан")) {
+    return { ok: false, error: "Эта коробка уже выдана" };
+  }
+
+  const now = nowIso();
+  box.status = "Выдано";
+  box.place = "Выдано клиенту";
+  box.updatedAt = now;
+  box.owner = input.user || "Оператор";
+
+  const found = findInvoiceItemByBox(data, box);
+  if (found.invoice && found.item) {
+    found.item.status = "Выдано";
+    found.item.deliveredAt = found.item.deliveredAt || now;
+    found.invoice.updatedAt = now;
+  }
+
+  logActivity(data, "Выдача по сканеру", `${box.id}: выдано клиенту по сканеру ${box.track || box.code || ""}`, input.user || "Оператор", box.id);
+  writeStore(app, data);
+  await cloudRequest("/api/admin/boxes/upsert", {
+    method: "POST",
+    body: JSON.stringify({ box }),
+  });
+  return publicSnapshot(app);
+}
+
 function updateBox(app, boxId, patch, title, user) {
   const data = readStore(app);
   const index = data.boxes.findIndex((box) => box.id === boxId);
@@ -1571,6 +1603,7 @@ function registerCflowIpc(ipcMain, app) {
   ipcMain.handle("cflow-data:scan-client-qr", (_event, payload) => withPermission(app, payload, "issue_box", (input) => scanClientQr(app, input)));
   ipcMain.handle("cflow-data:scan-box-code", (_event, payload) => withPermission(app, payload, "receive_box", (input) => scanBoxCode(app, input)));
   ipcMain.handle("cflow-data:accept-scanned-box", (_event, payload) => withPermission(app, payload, "receive_box", (input) => acceptScannedBox(app, input)));
+  ipcMain.handle("cflow-data:issue-scanned-box", (_event, payload) => withPermission(app, payload, "issue_box", (input) => issueScannedBox(app, input)));
   ipcMain.handle("cflow-data:move-box", (_event, payload) => withPermission(app, payload, "move_box", (input) => moveBox(app, input)));
   ipcMain.handle("cflow-data:issue-box", (_event, payload) => withPermission(app, payload, "issue_box", (input) => issueBox(app, input)));
   ipcMain.handle("cflow-data:update-status", (_event, payload) => withPermission(app, payload, "warehouse", (input) => updateStatus(app, input)));

@@ -162,8 +162,23 @@ async function createClaimToken(env: Env, payload: Record<string, unknown>) {
   return `ZBC:CLAIM:v1:${encoded}.${signature}`;
 }
 
-async function verifyClaimToken(env: Env, token: string) {
+const russianKeyboardToEnglish: Record<string, string> = {
+  й: "q", ц: "w", у: "e", к: "r", е: "t", н: "y", г: "u", ш: "i", щ: "o", з: "p", х: "[", ъ: "]",
+  ф: "a", ы: "s", в: "d", а: "f", п: "g", р: "h", о: "j", л: "k", д: "l", ж: ";", э: "'",
+  я: "z", ч: "x", с: "c", м: "v", и: "b", т: "n", ь: "m", б: ",", ю: ".", ".": "/",
+  Й: "Q", Ц: "W", У: "E", К: "R", Е: "T", Н: "Y", Г: "U", Ш: "I", Щ: "O", З: "P", Х: "{", Ъ: "}",
+  Ф: "A", Ы: "S", В: "D", А: "F", П: "G", Р: "H", О: "J", Л: "K", Д: "L", Ж: ":", Э: "\"",
+  Я: "Z", Ч: "X", С: "C", М: "V", И: "B", Т: "N", Ь: "M", Б: "<", Ю: ">", ",": "?",
+};
+
+function normalizeScannedClaimToken(token: string) {
   const cleanToken = String(token || "").trim();
+  if (cleanToken.startsWith("ZBC:CLAIM:v1:")) return cleanToken;
+  return cleanToken.replace(/[А-Яа-яЁё.,]/g, (char) => russianKeyboardToEnglish[char] || char);
+}
+
+async function verifyClaimToken(env: Env, token: string) {
+  const cleanToken = normalizeScannedClaimToken(String(token || ""));
   const prefix = "ZBC:CLAIM:v1:";
   if (!cleanToken.startsWith(prefix)) return { ok: false as const, error: "Это не QR Zabota GO" };
   const [encoded, signature] = cleanToken.slice(prefix.length).split(".");
@@ -1147,13 +1162,14 @@ function isBoxDelivered(box: Record<string, unknown>) {
 async function clientClaim(env: Env, client: CflowClient, knownBoxes?: Record<string, unknown>[]) {
   const boxes = knownBoxes || await getBoxes(env, client);
   const activeBoxes = boxes.filter((box) => !isBoxDelivered(box as Record<string, unknown>));
-  const boxIds = activeBoxes.map((box) => String((box as { id?: string }).id || "")).filter(Boolean);
+  const boxIds = activeBoxes.map((box) => String((box as { id?: string }).id || "")).filter(Boolean).sort();
   if (!boxIds.length) return null;
   const token = await createClaimToken(env, {
+    type: "claim",
+    version: 1,
     clientId: client.id,
     clientCode: normalizeGeneratedClientCode(client.client_code),
     boxIds,
-    iat: Date.now(),
   });
   return {
     token,

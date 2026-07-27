@@ -21,8 +21,28 @@ function storePath(app) {
   return path.join(dataDir(app), "cflow-data.json");
 }
 
+function backupDir(app) {
+  return path.join(app.getPath("documents"), "Cargo", "backups");
+}
+
+function backupMetaPath(app) {
+  return path.join(dataDir(app), "cflow-backups.json");
+}
+
 function nowIso() {
   return new Date().toISOString();
+}
+
+function todayKey(date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
+function safeStamp(iso = nowIso()) {
+  return iso.replace(/[:.]/g, "-");
+}
+
+function checksumJson(value) {
+  return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 function displayTime(iso = nowIso()) {
@@ -646,9 +666,126 @@ function readStore(app) {
   };
 }
 
+let cloudSyncTimer = null;
+let cloudSyncBusy = false;
+let queuedCloudSnapshot = null;
+
+function backupStats(data) {
+  return {
+    clients: Array.isArray(data.clients) ? data.clients.length : 0,
+    boxes: Array.isArray(data.boxes) ? data.boxes.length : 0,
+    invoices: Array.isArray(data.invoices) ? data.invoices.length : 0,
+    shipments: Array.isArray(data.shipments) ? data.shipments.length : 0,
+    activity: Array.isArray(data.activity) ? data.activity.length : 0,
+    clientCodes: Array.isArray(data.clientCodes) ? data.clientCodes.length : 0,
+  };
+}
+
+function backupPayload(data, reason = "manual") {
+  const createdAt = nowIso();
+  const snapshot = JSON.parse(JSON.stringify(data));
+  const metadata = {
+    app: "Zabota Cargo",
+    version: "0.1.0",
+    reason,
+    createdAt,
+    stats: backupStats(snapshot),
+  };
+  return {
+    metadata: {
+      ...metadata,
+      checksum: checksumJson({ metadata, snapshot }),
+    },
+    data: snapshot,
+  };
+}
+
+function cleanupLocalBackups(app, keep = 60) {
+  try {
+    const dir = backupDir(app);
+    if (!fs.existsSync(dir)) return;
+    const files = fs.readdirSync(dir)
+      .filter((file) => /^zabota-backup-.*\.json$/i.test(file))
+      .map((file) => ({ file, path: path.join(dir, file), mtime: fs.statSync(path.join(dir, file)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+    files.slice(keep).forEach((item) => fs.rmSync(item.path, { force: true }));
+  } catch {
+    // Backup cleanup must never block normal warehouse work.
+  }
+}
+
+function writeBackupMeta(app, nextMeta) {
+  fs.mkdirSync(dataDir(app), { recursive: true });
+  fs.writeFileSync(backupMetaPath(app), JSON.stringify(nextMeta, null, 2), "utf8");
+}
+
+function readBackupMeta(app) {
+  try {
+    return JSON.parse(fs.readFileSync(backupMetaPath(app), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function createLocalBackup(app, data, reason = "manual", payload = backupPayload(data, reason)) {
+  fs.mkdirSync(backupDir(app), { recursive: true });
+  const fileName = `zabota-backup-${safeStamp(payload.metadata.createdAt)}-${reason.replace(/[^a-z0-9-]/gi, "-")}.json`;
+  const filePath = path.join(backupDir(app), fileName);
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), "utf8");
+  cleanupLocalBackups(app);
+  return { ...payload.metadata, filePath };
+}
+
+async function createBackup(app, reason = "manual") {
+  const data = readStore(app);
+  const payload = backupPayload(data, reason);
+  const local = createLocalBackup(app, data, reason, payload);
+  const cloud = await cloudRequest("/api/admin/backups/create", {
+    method: "POST",
+    body: JSON.stringify({ reason, backup: payload }),
+  });
+  return { ok: true, local, cloud: cloud?.ok ? { ok: true, backupId: cloud.backupId } : { ok: false, error: cloud?.error || "cloud_backup_failed" } };
+}
+
+async function createDailyBackupIfDue(app, force = false) {
+  const now = new Date();
+  const currentDay = todayKey(now);
+  const meta = readBackupMeta(app);
+  if (!force && meta.lastDailyBackupDate === currentDay) return { ok: true, skipped: true };
+  if (!force && now.getHours() < 2) return { ok: true, skipped: true };
+  const result = await createBackup(app, "daily");
+  writeBackupMeta(app, {
+    ...meta,
+    lastDailyBackupDate: currentDay,
+    lastDailyBackupAt: nowIso(),
+    lastDailyBackupFile: result.local?.filePath || "",
+    lastDailyCloudBackup: result.cloud || null,
+  });
+  return result;
+}
+
+function queueCloudSnapshot(app, data) {
+  queuedCloudSnapshot = JSON.parse(JSON.stringify(data));
+  if (cloudSyncTimer) return;
+  cloudSyncTimer = setTimeout(async () => {
+    cloudSyncTimer = null;
+    if (cloudSyncBusy || !queuedCloudSnapshot) return;
+    cloudSyncBusy = true;
+    const snapshot = queuedCloudSnapshot;
+    queuedCloudSnapshot = null;
+    try {
+      await pushCloudSnapshot(snapshot);
+    } finally {
+      cloudSyncBusy = false;
+      if (queuedCloudSnapshot) queueCloudSnapshot(app, queuedCloudSnapshot);
+    }
+  }, 1200);
+}
+
 function writeStore(app, data) {
   ensureStore(app);
   fs.writeFileSync(storePath(app), JSON.stringify(data, null, 2), "utf8");
+  queueCloudSnapshot(app, data);
 }
 
 function withPermission(app, payload, permission, action) {
@@ -1217,6 +1354,7 @@ async function deleteClient(app, input) {
 
 function registerCflowIpc(ipcMain, app) {
   ipcMain.handle("cflow-data:snapshot", (_event, payload) => withPermission(app, payload, "search", () => publicSnapshot(app)));
+  ipcMain.handle("cflow-data:create-backup", (_event, payload) => withPermission(app, payload, "all", () => createBackup(app, "manual")));
   ipcMain.handle("cflow-data:receive-box", (_event, payload) => withPermission(app, payload, "receive_box", (input) => receiveBox(app, input)));
   ipcMain.handle("cflow-data:move-box", (_event, payload) => withPermission(app, payload, "move_box", (input) => moveBox(app, input)));
   ipcMain.handle("cflow-data:issue-box", (_event, payload) => withPermission(app, payload, "issue_box", (input) => issueBox(app, input)));
@@ -1237,6 +1375,15 @@ function registerCflowIpc(ipcMain, app) {
   ipcMain.handle("cflow-data:currency-rates", (_event, payload) => withPermission(app, payload, "search", () => fetchCurrencyRates()));
 }
 
+function startBackupScheduler(app) {
+  createDailyBackupIfDue(app).catch(() => undefined);
+  const interval = setInterval(() => {
+    createDailyBackupIfDue(app).catch(() => undefined);
+  }, 5 * 60 * 1000);
+  if (typeof interval.unref === "function") interval.unref();
+}
+
 module.exports = {
   registerCflowIpc,
+  startBackupScheduler,
 };

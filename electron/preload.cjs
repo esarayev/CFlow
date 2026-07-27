@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld("cflowUsers", {
 
 contextBridge.exposeInMainWorld("cflowData", {
   snapshot: (payload) => ipcRenderer.invoke("cflow-data:snapshot", payload),
+  createBackup: (payload) => ipcRenderer.invoke("cflow-data:create-backup", payload),
   receiveBox: (payload) => ipcRenderer.invoke("cflow-data:receive-box", payload),
   moveBox: (payload) => ipcRenderer.invoke("cflow-data:move-box", payload),
   issueBox: (payload) => ipcRenderer.invoke("cflow-data:issue-box", payload),

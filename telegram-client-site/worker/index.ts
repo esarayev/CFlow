@@ -82,6 +82,14 @@ type CflowTombstone = {
   deleted_at: string;
 };
 
+type CflowBackup = {
+  id: string;
+  reason: string;
+  created_at: string;
+  checksum: string;
+  payload: string;
+};
+
 type TelegramUpdate = {
   message?: {
     chat?: { id?: number | string };
@@ -100,6 +108,7 @@ const memoryClientCodes = new Map<string, CflowClientCode>();
 const memorySettings = new Map<string, string>();
 const memoryDeletedBoxes = new Map<string, CflowTombstone>();
 const memoryDeletedClients = new Map<string, CflowTombstone>();
+const memoryBackups = new Map<string, CflowBackup>();
 
 const CLIENT_CODE_STATIC_PREFIX = "奇瑞QR";
 const CLIENT_CODE_LEGACY_STATIC_PREFIX = "奇瑞QR 18911759229";
@@ -571,6 +580,16 @@ async function ensureTables(db?: D1Database) {
       deleted_at TEXT NOT NULL
     )
   `).run();
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS backups (
+      id TEXT PRIMARY KEY,
+      reason TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      checksum TEXT DEFAULT '',
+      payload TEXT NOT NULL
+    )
+  `).run();
+  await db.prepare("CREATE INDEX IF NOT EXISTS backups_created_at_idx ON backups(created_at)").run();
   })().catch((error) => {
     ensureTablesPromise = null;
     throw error;
@@ -1216,6 +1235,37 @@ async function cloudSnapshot(env: Env) {
   };
 }
 
+async function createCloudBackup(env: Env, input: Record<string, unknown>) {
+  await ensureTables(env.DB);
+  const backup = (input.backup && typeof input.backup === "object" ? input.backup : input) as Record<string, unknown>;
+  const metadata = (backup.metadata && typeof backup.metadata === "object" ? backup.metadata : {}) as Record<string, unknown>;
+  const createdAt = String(metadata.createdAt || input.createdAt || nowIso());
+  const reason = String(input.reason || metadata.reason || "manual").trim();
+  const id = String(input.id || `BKP-${createdAt.replace(/[:.]/g, "-")}-${Math.random().toString(16).slice(2, 6)}`).trim();
+  const payload = JSON.stringify(backup);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
+  const checksum = String(metadata.checksum || hex(digest));
+  const row = { id, reason, created_at: createdAt, checksum, payload };
+  memoryBackups.set(id, row);
+  if (!env.DB) return row;
+  await env.DB.prepare(`
+    INSERT INTO backups (id, reason, created_at, checksum, payload)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      reason = excluded.reason,
+      created_at = excluded.created_at,
+      checksum = excluded.checksum,
+      payload = excluded.payload
+  `).bind(row.id, row.reason, row.created_at, row.checksum, row.payload).run();
+  await env.DB.prepare(`
+    DELETE FROM backups
+    WHERE id NOT IN (
+      SELECT id FROM backups ORDER BY created_at DESC LIMIT 120
+    )
+  `).run();
+  return row;
+}
+
 function requireAdmin(request: Request, env: Env) {
   const auth = request.headers.get("authorization") || "";
   return Boolean(env.CFLOW_ADMIN_TOKEN && auth === `Bearer ${env.CFLOW_ADMIN_TOKEN}`);
@@ -1807,6 +1857,17 @@ async function handleAdminHealth(request: Request, env: Env) {
   return json({ ok: true, storage: env.DB ? "d1" : "memory" });
 }
 
+async function handleAdminCreateBackup(request: Request, env: Env) {
+  if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
+  try {
+    const body = await request.json() as Record<string, unknown>;
+    const backup = await createCloudBackup(env, body);
+    return json({ ok: true, backupId: backup.id, createdAt: backup.created_at, checksum: backup.checksum });
+  } catch (error) {
+    return json({ ok: false, error: error instanceof Error ? error.message : "Backup не сохранен" }, { status: 400 });
+  }
+}
+
 async function handleAdminSyncSnapshot(request: Request, env: Env) {
   if (!requireAdmin(request, env)) return json({ ok: false, error: "Нет доступа" }, { status: 403 });
   try {
@@ -2150,6 +2211,7 @@ const worker = {
     if (url.pathname === "/api/admin/clients/upsert" && request.method === "POST") return handleAdminUpsertClient(request, env, ctx);
     if (url.pathname === "/api/admin/snapshot" && request.method === "GET") return handleAdminSnapshot(request, env);
     if (url.pathname === "/api/admin/health" && request.method === "GET") return handleAdminHealth(request, env);
+    if (url.pathname === "/api/admin/backups/create" && request.method === "POST") return handleAdminCreateBackup(request, env);
     if (url.pathname === "/api/admin/snapshot/sync" && request.method === "POST") return handleAdminSyncSnapshot(request, env);
     if (url.pathname === "/api/admin/staff/sync" && request.method === "POST") return handleAdminStaffSync(request, env);
     if (url.pathname === "/api/admin/boxes/upsert" && request.method === "POST") return handleAdminUpsertBox(request, env);

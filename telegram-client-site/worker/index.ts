@@ -709,12 +709,13 @@ async function upsertDeletedClient(env: Env, input: Record<string, unknown>) {
 async function upsertClient(env: Env, input: Record<string, unknown>) {
   const deleted = await findDeletedClient(env, String(input.id || ""));
   if (deleted) return null;
+  const isTelegramRegistration = String(input.registrationSource || "") === "telegram" && !input.id;
   const existing = await findClient(env, {
     id: String(input.id || ""),
     telegramId: String(input.telegramId || ""),
     phone: String(input.phone || ""),
     clientCode: normalizeGeneratedClientCode(input.clientCode || input.code || ""),
-    name: String(input.name || input.fullName || ""),
+    name: isTelegramRegistration ? "" : String(input.name || input.fullName || ""),
   });
   const client = fromInput(input, existing);
   if (!client.name) throw new Error("Укажите имя клиента");
@@ -1739,21 +1740,35 @@ async function handleClientClaim(request: Request, env: Env) {
 }
 
 async function handleRegister(request: Request, env: Env) {
-  const body = await request.json() as { initData?: string; name?: string; phone?: string };
-  const verified = await verifyTelegramInitData(body.initData || "", env.CFLOW_TELEGRAM_BOT_TOKEN);
-  if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
-  if (!verified.user?.id) return json({ ok: false, error: "Telegram пользователь не найден" }, { status: 401 });
+  try {
+    const body = await request.json() as { initData?: string; name?: string; phone?: string };
+    const verified = await verifyTelegramInitData(body.initData || "", env.CFLOW_TELEGRAM_BOT_TOKEN);
+    if (!verified.ok) return json({ ok: false, error: verified.error }, { status: 401 });
+    if (!verified.user?.id) return json({ ok: false, error: "Telegram пользователь не найден" }, { status: 401 });
 
-  const telegramId = String(verified.user.id);
-  const client = await upsertClient(env, {
-    name: body.name || [verified.user.first_name, verified.user.last_name].filter(Boolean).join(" ") || verified.user.username || "Клиент",
-    phone: body.phone || "",
-    telegram: verified.user.username ? `@${verified.user.username}` : "",
-    telegramId,
-    registrationSource: "telegram",
-  });
-  if (!client) return json({ ok: false, error: "Заявка была удалена. Напишите менеджеру для повторной регистрации." }, { status: 409 });
-  return json({ ok: true, ...publicClient(client, await getBoxes(env, client)) });
+    const telegramId = String(verified.user.id);
+    const name = String(body.name || [verified.user.first_name, verified.user.last_name].filter(Boolean).join(" ") || verified.user.username || "Клиент").trim();
+    const client = await upsertClient(env, {
+      name,
+      phone: body.phone || "",
+      telegram: verified.user.username ? `@${verified.user.username}` : "",
+      telegramId,
+      registrationSource: "telegram",
+      registrationStatus: "pending",
+    });
+    if (!client) return json({ ok: false, error: "Заявка была удалена. Напишите менеджеру для повторной регистрации." }, { status: 409 });
+    await upsertEntity(env, "activity", {
+      id: `ACT-REG-${telegramId}-${Date.now()}`,
+      time: nowIso(),
+      title: "Новая заявка",
+      text: `${client.name} отправил заявку из Telegram`,
+      user: client.telegram_username || telegramId,
+      updatedAt: nowIso(),
+    }, "ACT");
+    return json({ ok: true, ...publicClient(client, await getBoxes(env, client)) });
+  } catch (error) {
+    return json({ ok: false, error: error instanceof Error ? error.message : "Заявка не сохранена" }, { status: 500 });
+  }
 }
 
 async function handleAdminClients(request: Request, env: Env) {

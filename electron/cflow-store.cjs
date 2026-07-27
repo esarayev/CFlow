@@ -266,12 +266,13 @@ function normalizeCloudClient(client) {
 function mergeClient(data, input) {
   const next = normalizeCloudClient(input);
   if (!next.name) return false;
+  const isTelegramLead = next.registrationSource === "telegram" && !next.clientCode;
 
   const existing = data.clients.find((client) =>
     (next.telegramId && client.telegramId === next.telegramId) ||
     (next.phone && client.phone === next.phone) ||
     (next.clientCode && client.clientCode === next.clientCode) ||
-    client.name.toLowerCase() === next.name.toLowerCase(),
+    (!isTelegramLead && client.name.toLowerCase() === next.name.toLowerCase()),
   );
 
   if (existing) {

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, ipcMain, session } = require("electron");
+﻿const { app, BrowserWindow, shell, ipcMain, session } = require("electron");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { registerUserIpc } = require("./users-store.cjs");
@@ -22,7 +22,7 @@ function createWindow() {
     height: 780,
     minWidth: 980,
     minHeight: 680,
-    title: "Zabota Cargo Пользователи",
+    title: "Zabota GO Пользователи",
     autoHideMenuBar: true,
     backgroundColor: "#f8f6f3",
     icon: path.join(app.getAppPath(), "assets", "icon.ico"),

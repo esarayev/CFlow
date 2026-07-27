@@ -1,5 +1,5 @@
 {
-  "name": "zabota-cargo",
+  "name": "zabota-go",
   "version": "0.1.0",
   "private": true,
   "main": "electron/main.cjs",
@@ -47,8 +47,8 @@
   },
   "build": {
     "appId": "kz.zabota-cargo.desktop",
-    "productName": "Zabota Cargo",
-    "copyright": "Copyright © 2026 Zabota Cargo",
+    "productName": "Zabota GO",
+    "copyright": "Copyright © 2026 Zabota GO",
     "directories": {
       "output": "release"
     },
@@ -70,7 +70,7 @@
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Zabota Cargo"
+      "shortcutName": "Zabota GO"
     }
   },
   "type": "module"

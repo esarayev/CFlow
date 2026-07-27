@@ -275,11 +275,11 @@ const defaultChinaAddress = "18911759229 浙江省金华市义乌市后宅街道
 declare global {
   interface Window {
     cflowUsers?: {
-      list: () => Promise<SessionUser[]>;
+      list: (payload: { sessionToken: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
       authenticate: (username: string, password: string) => Promise<AuthResult>;
-      create: (user: { name: string; username: string; telegramUsername?: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
-      update: (user: { id: string; name: string; username: string; telegramUsername?: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
-      delete: (userId: string) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
+      create: (user: { sessionToken: string; name: string; username: string; telegramUsername?: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
+      update: (user: { sessionToken: string; id: string; name: string; username: string; telegramUsername?: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
+      delete: (payload: { sessionToken: string; userId: string }) => Promise<{ ok: boolean; error?: string; users?: SessionUser[] }>;
     };
     cflowData?: {
       snapshot: (payload: Record<string, unknown>) => Promise<ApiResult>;
@@ -347,7 +347,7 @@ const knowledgeItems: KnowledgeItem[] = [
     id: "china-main-warehouse",
     category: "Склады",
     title: "Склад в Китае",
-    subtitle: "Основной адрес для клиентов Zabota Cargo",
+    subtitle: "Основной адрес для клиентов Zabota GO",
     badge: "Китай",
     details: [
       "Адрес: 18911759229 浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞",
@@ -887,7 +887,7 @@ export default function Home() {
     event.preventDefault();
 
     if (!window.cflowUsers) {
-      setLoginError("Служба авторизации не загрузилась. Перезапустите CFlow с ярлыка.");
+      setLoginError("Служба авторизации не загрузилась. Перезапустите Zabota GO с ярлыка.");
       return;
     }
 
@@ -1442,9 +1442,9 @@ export default function Home() {
       <main className="auth-shell">
         <section className="auth-panel" aria-label="Вход в CFlow">
           <div className="brand auth-brand">
-            <img className="brand-logo brand-logo-auth" src="./zabota-cargo-logo.png" alt="ZABOTA CARGO" />
+            <img className="brand-logo brand-logo-auth" src="./zabota-cargo-logo.png" alt="Zabota GO" />
             <div>
-              <strong>ZABOTA CARGO</strong>
+              <strong>Zabota GO</strong>
               <span>рабочий кабинет карго-точки</span>
             </div>
           </div>
@@ -1452,7 +1452,7 @@ export default function Home() {
             <p className="eyebrow">Безопасный вход</p>
             <h1>Вход сотрудника</h1>
             <p className="lead">
-              Доступные разделы зависят от роли. Пользователи создаются в отдельном приложении CFlow Пользователи.
+              Доступные разделы зависят от роли. Пользователи создаются в отдельном приложении Zabota GO Пользователи.
             </p>
           </div>
           <form className="auth-form" onSubmit={unlock}>
@@ -1476,9 +1476,9 @@ export default function Home() {
     <main className="shell">
       <aside className="sidebar" aria-label="Основная навигация">
         <div className="brand sidebar-brand">
-          <img className="brand-logo" src="./zabota-cargo-logo.png" alt="ZABOTA CARGO" />
+          <img className="brand-logo" src="./zabota-cargo-logo.png" alt="Zabota GO" />
           <div>
-            <strong>ZABOTA CARGO</strong>
+            <strong>Zabota GO</strong>
             <span>{sessionUser.role}</span>
           </div>
         </div>

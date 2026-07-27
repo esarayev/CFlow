@@ -151,7 +151,8 @@ function base64UrlDecode(value: string) {
 }
 
 async function signClaimPayload(env: Env, payload: string) {
-  const secret = env.CFLOW_ADMIN_TOKEN || env.CFLOW_TELEGRAM_BOT_TOKEN || "zabota-cargo-local";
+  const secret = env.CFLOW_ADMIN_TOKEN;
+  if (!secret) throw new Error("CFLOW_ADMIN_TOKEN is required for QR claim signing");
   const signature = await hmac(new TextEncoder().encode(secret), payload);
   return hex(signature).slice(0, 32);
 }

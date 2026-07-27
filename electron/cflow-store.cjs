@@ -14,11 +14,24 @@ const CLIENT_CODE_CAPACITY = CLIENT_CODE_ALPHABET.length * CLIENT_CODE_MAX_NUMBE
 const DEFAULT_CHINA_ADDRESS = "18911759229 浙江省金华市义乌市后宅街道金城一期商城大道F158号拼多多驿站-5697库-奇瑞";
 
 function dataDir(app) {
-  return path.join(app.getPath("appData"), "CFlow");
+  return path.join(app.getPath("appData"), "Zabota GO");
 }
 
 function storePath(app) {
   return path.join(dataDir(app), "cflow-data.json");
+}
+
+function legacyDataDir(app) {
+  return path.join(app.getPath("appData"), "CFlow");
+}
+
+function migrateLegacyFile(app, fileName) {
+  const nextFile = path.join(dataDir(app), fileName);
+  if (fs.existsSync(nextFile)) return;
+  const legacyFile = path.join(legacyDataDir(app), fileName);
+  if (!fs.existsSync(legacyFile)) return;
+  fs.mkdirSync(dataDir(app), { recursive: true });
+  fs.copyFileSync(legacyFile, nextFile);
 }
 
 function backupDir(app) {
@@ -695,6 +708,8 @@ function deriveWarehouse(boxes) {
 
 function ensureStore(app) {
   fs.mkdirSync(dataDir(app), { recursive: true });
+  migrateLegacyFile(app, "cflow-data.json");
+  migrateLegacyFile(app, "cflow-backups.json");
   if (!fs.existsSync(storePath(app))) {
     fs.writeFileSync(storePath(app), JSON.stringify(emptyStore(), null, 2), "utf8");
   }
@@ -741,7 +756,7 @@ function backupPayload(data, reason = "manual") {
   const createdAt = nowIso();
   const snapshot = JSON.parse(JSON.stringify(data));
   const metadata = {
-    app: "Zabota Cargo",
+    app: "Zabota GO",
     version: "0.1.0",
     reason,
     createdAt,

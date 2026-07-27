@@ -1,7 +1,7 @@
 {
   "appId": "kz.zabota-cargo.users",
-  "productName": "Zabota Cargo Пользователи",
-  "copyright": "Copyright © 2026 Zabota Cargo",
+  "productName": "Zabota GO Пользователи",
+  "copyright": "Copyright © 2026 Zabota GO",
   "directories": {
     "output": "release-users"
   },
@@ -12,7 +12,7 @@
     "package.json"
   ],
   "extraMetadata": {
-    "name": "zabota-cargo-users",
+    "name": "zabota-go-users",
     "main": "electron/users-main.cjs"
   },
   "win": {
@@ -24,6 +24,6 @@
     "perMachine": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "Zabota Cargo Пользователи"
+    "shortcutName": "Zabota GO Пользователи"
   }
 }

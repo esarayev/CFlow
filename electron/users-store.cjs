@@ -5,7 +5,6 @@ const https = require("node:https");
 const { execFileSync } = require("node:child_process");
 
 const ownerUsername = "esaraev85";
-const ownerPassword = "Q1w2e3r4!";
 
 const ownerUser = {
   id: "USR-001",
@@ -18,7 +17,43 @@ const ownerUser = {
 };
 
 const activeSessions = new Map();
+const authAttempts = new Map();
 const sessionTtlMs = 12 * 60 * 60 * 1000;
+const authWindowMs = 15 * 60 * 1000;
+const authMaxAttempts = 5;
+
+function ownerBootstrapPassword() {
+  return String(process.env.CFLOW_OWNER_PASSWORD || readWindowsUserEnv("CFLOW_OWNER_PASSWORD") || "");
+}
+
+function authAttemptKey(username) {
+  return String(username || "").trim().toLowerCase() || "unknown";
+}
+
+function isAuthLimited(username) {
+  const key = authAttemptKey(username);
+  const item = authAttempts.get(key);
+  if (!item) return false;
+  if (Date.now() - item.firstAt > authWindowMs) {
+    authAttempts.delete(key);
+    return false;
+  }
+  return item.count >= authMaxAttempts;
+}
+
+function recordAuthFailure(username) {
+  const key = authAttemptKey(username);
+  const current = authAttempts.get(key);
+  if (!current || Date.now() - current.firstAt > authWindowMs) {
+    authAttempts.set(key, { count: 1, firstAt: Date.now() });
+    return;
+  }
+  current.count += 1;
+}
+
+function clearAuthFailures(username) {
+  authAttempts.delete(authAttemptKey(username));
+}
 
 function readWindowsUserEnv(name) {
   if (process.platform !== "win32") return "";
@@ -130,11 +165,24 @@ function syncUsersToCloud(users) {
 }
 
 function dataDir(app) {
+  return path.join(app.getPath("appData"), "Zabota GO");
+}
+
+function legacyDataDir(app) {
   return path.join(app.getPath("appData"), "CFlow");
 }
 
 function storePath(app) {
   return path.join(dataDir(app), "users.json");
+}
+
+function migrateLegacyStore(app) {
+  const nextFile = storePath(app);
+  if (fs.existsSync(nextFile)) return;
+  const legacyFile = path.join(legacyDataDir(app), "users.json");
+  if (!fs.existsSync(legacyFile)) return;
+  fs.mkdirSync(dataDir(app), { recursive: true });
+  fs.copyFileSync(legacyFile, nextFile);
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
@@ -267,9 +315,11 @@ function validateSession(app, sessionToken, permission = "search") {
 
 function ensureStore(app) {
   fs.mkdirSync(dataDir(app), { recursive: true });
+  migrateLegacyStore(app);
   const file = storePath(app);
   if (!fs.existsSync(file)) {
-    const users = [{ ...ownerUser, passwordHash: hashPassword(ownerPassword) }];
+    const bootstrapPassword = ownerBootstrapPassword();
+    const users = [{ ...ownerUser, passwordHash: bootstrapPassword ? hashPassword(bootstrapPassword) : "" }];
     fs.writeFileSync(file, JSON.stringify({ users }, null, 2), "utf8");
   }
 }
@@ -294,12 +344,16 @@ function readUsers(app) {
   const owner = users.find((user) => user.username === ownerUsername);
 
   if (!owner) {
-    users.unshift({ ...ownerUser, passwordHash: hashPassword(ownerPassword) });
+    const bootstrapPassword = ownerBootstrapPassword();
+    users.unshift({ ...ownerUser, passwordHash: bootstrapPassword ? hashPassword(bootstrapPassword) : "" });
     writeUsers(app, users);
     return users;
   }
 
-  if (!owner.passwordHash) owner.passwordHash = hashPassword(ownerPassword);
+  if (!owner.passwordHash) {
+    const bootstrapPassword = ownerBootstrapPassword();
+    if (bootstrapPassword) owner.passwordHash = hashPassword(bootstrapPassword);
+  }
   writeUsers(app, users);
   return users;
 }
@@ -310,15 +364,26 @@ function listUsers(app) {
   return users.map(publicUser);
 }
 
+function withUserAdminSession(app, payload, action) {
+  const auth = validateSession(app, payload?.sessionToken, "all");
+  if (!auth.ok) return auth;
+  return action(payload || {});
+}
+
 function authenticate(app, username, password) {
   try {
     const cleanUsername = String(username || "").trim();
+    if (isAuthLimited(cleanUsername)) {
+      return { ok: false, error: "Слишком много попыток входа. Подождите 15 минут." };
+    }
     const user = readUsers(app).find((item) => item.username === cleanUsername && item.status === "active");
 
     if (!user || !verifyPassword(password, user.passwordHash)) {
+      recordAuthFailure(cleanUsername);
       return { ok: false, error: "Неверный логин или пароль" };
     }
 
+    clearAuthFailures(cleanUsername);
     return { ok: true, user: publicUser(user), sessionToken: createSession(user) };
   } catch {
     return { ok: false, error: "База пользователей повреждена. Перезапустите приложение." };
@@ -416,13 +481,13 @@ function deleteUser(app, userId) {
 }
 
 function registerUserIpc(ipcMain, app) {
-  ipcMain.handle("cflow-users:list", () => listUsers(app));
+  ipcMain.handle("cflow-users:list", (_event, payload) => withUserAdminSession(app, payload, () => ({ ok: true, users: listUsers(app) })));
   ipcMain.handle("cflow-users:auth", (_event, payload) =>
     authenticate(app, payload?.username, payload?.password),
   );
-  ipcMain.handle("cflow-users:create", (_event, payload) => createUser(app, payload));
-  ipcMain.handle("cflow-users:update", (_event, payload) => updateUser(app, payload));
-  ipcMain.handle("cflow-users:delete", (_event, payload) => deleteUser(app, payload?.userId));
+  ipcMain.handle("cflow-users:create", (_event, payload) => withUserAdminSession(app, payload, (input) => createUser(app, input)));
+  ipcMain.handle("cflow-users:update", (_event, payload) => withUserAdminSession(app, payload, (input) => updateUser(app, input)));
+  ipcMain.handle("cflow-users:delete", (_event, payload) => withUserAdminSession(app, payload, (input) => deleteUser(app, input?.userId)));
 }
 
 module.exports = {

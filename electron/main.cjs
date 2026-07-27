@@ -30,7 +30,7 @@ function createWindow() {
     height: 920,
     minWidth: 1180,
     minHeight: 760,
-    title: "Zabota Cargo",
+    title: "Zabota GO",
     autoHideMenuBar: true,
     backgroundColor: "#f8f6f3",
     icon: path.join(app.getAppPath(), "assets", "icon.ico"),

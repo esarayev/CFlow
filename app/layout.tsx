@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CFlow - система управления карго-точкой",
+  title: "Zabota GO - система управления карго-точкой",
   description:
     "Современная web-система для приема, хранения, отправки, выдачи и финансового учета каждой коробки.",
   icons: {

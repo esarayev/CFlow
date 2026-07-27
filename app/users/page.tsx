@@ -16,15 +16,16 @@ type User = {
 };
 
 type AuthResult = { ok: boolean; error?: string; user?: User; sessionToken?: string };
+type UsersResult = { ok: boolean; error?: string; users?: User[] };
 
 declare global {
   interface Window {
     cflowUsers?: {
-      list: () => Promise<User[]>;
+      list: (payload: { sessionToken: string }) => Promise<UsersResult>;
       authenticate: (username: string, password: string) => Promise<AuthResult>;
-      create: (user: { name: string; username: string; telegramUsername?: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
-      update: (user: { id: string; name: string; username: string; telegramUsername?: string; password: string; role: string }) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
-      delete: (userId: string) => Promise<{ ok: boolean; error?: string; users?: User[] }>;
+      create: (user: { sessionToken: string; name: string; username: string; telegramUsername?: string; password: string; role: string }) => Promise<UsersResult>;
+      update: (user: { sessionToken: string; id: string; name: string; username: string; telegramUsername?: string; password: string; role: string }) => Promise<UsersResult>;
+      delete: (payload: { sessionToken: string; userId: string }) => Promise<UsersResult>;
     };
   }
 }
@@ -54,6 +55,7 @@ export default function UsersApp() {
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
+  const [sessionToken, setSessionToken] = useState("");
   const [error, setError] = useState("");
   const [users, setUsers] = useState<User[]>(fallbackUsers);
   const [form, setForm] = useState({ name: "", username: "", telegramUsername: "", password: "", role: "Менеджер" as Role });
@@ -64,35 +66,33 @@ export default function UsersApp() {
   const activeUsers = users.filter((user) => user.status === "active" || user.statusLabel === "Активен").length;
 
   useEffect(() => {
-    if (!isUnlocked) return;
-    window.cflowUsers?.list().then(setUsers).catch(() => setUsers(fallbackUsers));
-  }, [isUnlocked]);
+    if (!isUnlocked || !sessionToken) return;
+    window.cflowUsers?.list({ sessionToken }).then((result) => {
+      if (result.ok) setUsers(result.users || fallbackUsers);
+      else setError(result.error || "Не удалось загрузить пользователей");
+    }).catch(() => setUsers(fallbackUsers));
+  }, [isUnlocked, sessionToken]);
 
   async function unlock(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
 
     if (!window.cflowUsers) {
-      if (login.trim() === "esaraev85" && password === "Q1w2e3r4!") {
-        setUsers(fallbackUsers);
-        setIsUnlocked(true);
-        return;
-      }
-
-      setError("Служба CFlow Пользователи не загрузилась. Перезапустите приложение с ярлыка.");
+      setError("Служба Zabota GO Пользователи не загрузилась. Перезапустите приложение с ярлыка.");
       return;
     }
 
     try {
       const result = await window.cflowUsers.authenticate(login, password);
-      if (result.ok) {
+      if (result.ok && result.sessionToken) {
+        setSessionToken(result.sessionToken);
         setIsUnlocked(true);
         return;
       }
 
       setError(result.error || "Неверный логин или пароль");
     } catch {
-      setError("Не удалось проверить пароль. Перезапустите приложение CFlow Пользователи.");
+      setError("Не удалось проверить пароль. Перезапустите приложение Zabota GO Пользователи.");
     }
   }
 
@@ -100,13 +100,13 @@ export default function UsersApp() {
     event.preventDefault();
 
     if (!window.cflowUsers) {
-      setError("Служба CFlow Пользователи не загрузилась. Перезапустите приложение с ярлыка.");
+      setError("Служба Zabota GO Пользователи не загрузилась. Перезапустите приложение с ярлыка.");
       return;
     }
 
     const result = editingId
-      ? await window.cflowUsers.update({ ...form, id: editingId })
-      : await window.cflowUsers.create(form);
+      ? await window.cflowUsers.update({ ...form, id: editingId, sessionToken })
+      : await window.cflowUsers.create({ ...form, sessionToken });
 
     if (!result.ok) {
       setError(result.error || "Не удалось сохранить пользователя");
@@ -142,11 +142,11 @@ export default function UsersApp() {
     }
 
     if (!window.cflowUsers) {
-      setError("Служба CFlow Пользователи не загрузилась. Перезапустите приложение с ярлыка.");
+      setError("Служба Zabota GO Пользователи не загрузилась. Перезапустите приложение с ярлыка.");
       return;
     }
 
-    const result = await window.cflowUsers.delete(user.id);
+    const result = await window.cflowUsers.delete({ userId: user.id, sessionToken });
     if (!result.ok) {
       setError(result.error || "Не удалось удалить пользователя");
       return;
@@ -160,11 +160,11 @@ export default function UsersApp() {
   if (!isUnlocked) {
     return (
       <main className="auth-shell">
-        <section className="auth-panel users-auth" aria-label="Вход в CFlow Пользователи">
+        <section className="auth-panel users-auth" aria-label="Вход в Zabota GO Пользователи">
           <div className="brand auth-brand">
-            <img className="brand-logo brand-logo-auth" src="./zabota-cargo-logo.png" alt="ZABOTA CARGO" />
+            <img className="brand-logo brand-logo-auth" src="./zabota-cargo-logo.png" alt="Zabota GO" />
             <div>
-              <strong>ZABOTA CARGO Пользователи</strong>
+              <strong>Zabota GO Пользователи</strong>
               <span>управление сотрудниками и ролями</span>
             </div>
           </div>
@@ -196,13 +196,13 @@ export default function UsersApp() {
     <main className="users-admin-shell">
       <section className="users-admin-head">
         <div className="brand">
-          <img className="brand-logo" src="./zabota-cargo-logo.png" alt="ZABOTA CARGO" />
+          <img className="brand-logo" src="./zabota-cargo-logo.png" alt="Zabota GO" />
           <div>
-            <strong>ZABOTA CARGO Пользователи</strong>
+            <strong>Zabota GO Пользователи</strong>
             <span>сотрудники, роли и доступы</span>
           </div>
         </div>
-        <button type="button" onClick={() => setIsUnlocked(false)}>Выйти</button>
+        <button type="button" onClick={() => { setSessionToken(""); setIsUnlocked(false); }}>Выйти</button>
       </section>
 
       <section className="operation-board users-hero">

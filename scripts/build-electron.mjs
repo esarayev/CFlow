@@ -23,14 +23,14 @@ const pkg = JSON.parse(originalPackageText);
 
 const metadata = target === "users"
   ? {
-      name: "zabota-cargo-users",
-      productName: "Zabota Cargo Пользователи",
-      description: "Управление сотрудниками Zabota Cargo",
+      name: "zabota-go-users",
+      productName: "Zabota GO Пользователи",
+      description: "Управление сотрудниками Zabota GO",
     }
   : {
-      name: "zabota-cargo",
-      productName: "Zabota Cargo",
-      description: "Рабочий кабинет карго-точки Zabota Cargo",
+      name: "zabota-go",
+      productName: "Zabota GO",
+      description: "Рабочий кабинет карго-точки Zabota GO",
     };
 
 try {

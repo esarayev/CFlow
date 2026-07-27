@@ -613,6 +613,14 @@ function findClientByClientCode(data, clientCode) {
 function normalizeInvoiceItem(data, item, index = 0) {
   const clientCode = normalizeGeneratedClientCode(item.clientCode || item.code || "");
   const client = findClientByClientCode(data, clientCode);
+  const weight = String(item.weight || "").trim();
+  const clientRate = toNumber(item.clientRate || item.client_rate);
+  const chinaRate = toNumber(item.chinaRate || item.china_rate);
+  const manualChargeAmount = toNumber(item.chargeAmount || item.amount);
+  const billableWeight = toNumber(weight);
+  const costAmount = Math.round(billableWeight * chinaRate);
+  const chargeAmount = Math.round(manualChargeAmount || (billableWeight * clientRate));
+  const profitAmount = chargeAmount - costAmount;
   return {
     id: String(item.id || makeId("INVITEM", index)).trim(),
     clientCode,
@@ -624,7 +632,12 @@ function normalizeInvoiceItem(data, item, index = 0) {
     title: String(item.title || item.name || "").trim(),
     quantity: String(item.quantity || item.qty || "1").trim(),
     packageCount: String(positiveInt(item.packageCount || item.packages || item.package_count || "1")).trim(),
-    weight: String(item.weight || "").trim(),
+    weight,
+    clientRate,
+    chinaRate,
+    costAmount,
+    chargeAmount,
+    profitAmount,
     dimensions: String(item.dimensions || "").trim(),
     description: String(item.description || "").trim(),
     boxId: String(item.boxId || "").trim(),
@@ -1168,11 +1181,28 @@ async function issueScannedBox(app, input) {
   box.place = "Выдано клиенту";
   box.updatedAt = now;
   box.owner = input.user || "Оператор";
+  const chargeAmount = toNumber(box.chargeAmount || box.amount);
+  const costAmount = toNumber(box.costAmount);
+  const profitAmount = toNumber(box.profitAmount) || chargeAmount - costAmount;
+  if (box.invoiceId && chargeAmount > 0 && !box.chargedAt) {
+    data.finances.chargedToday = Number(data.finances.chargedToday || 0) + chargeAmount;
+    data.finances.expectedToday = Number(data.finances.expectedToday || 0) + chargeAmount;
+    data.finances.debt = Number(data.finances.debt || 0) + chargeAmount;
+    data.finances.costToday = Number(data.finances.costToday || 0) + costAmount;
+    data.finances.expensesToday = Number(data.finances.expensesToday || 0) + costAmount;
+    data.finances.profitToday = Number(data.finances.profitToday || 0) + profitAmount;
+    box.chargedAt = now;
+  }
 
   const found = findInvoiceItemByBox(data, box);
   if (found.invoice && found.item) {
     found.item.status = "Выдано";
     found.item.deliveredAt = found.item.deliveredAt || now;
+    found.item.chargeAmount = found.item.chargeAmount || box.chargeAmount || box.amount || 0;
+    found.item.chinaRate = found.item.chinaRate || box.chinaRate || 0;
+    found.item.clientRate = found.item.clientRate || box.clientRate || 0;
+    found.item.costAmount = found.item.costAmount || box.costAmount || 0;
+    found.item.profitAmount = found.item.profitAmount || box.profitAmount || 0;
     found.invoice.updatedAt = now;
   }
 
@@ -1390,7 +1420,13 @@ async function confirmInvoiceLocal(app, input) {
             dimensions: item.dimensions,
             route: "Китай -> Казахстан",
             payment: "Не оплачено",
-            amount: 0,
+            amount: item.chargeAmount || 0,
+            chinaRate: item.chinaRate || 0,
+            clientRate: item.clientRate || 0,
+            costAmount: item.costAmount || 0,
+            chargeAmount: item.chargeAmount || 0,
+            profitAmount: item.profitAmount || 0,
+            chargedAt: "",
             batch: invoice.number,
             invoiceId: invoice.id,
             invoiceItemId: item.id,

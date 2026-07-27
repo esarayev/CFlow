@@ -36,6 +36,7 @@ type BoxItem = {
   costAmount?: number;
   chargeAmount?: number;
   profitAmount?: number;
+  chargedAt?: string;
   photo?: string;
   comment?: string;
   createdAt?: string;
@@ -125,6 +126,11 @@ type InvoiceItem = {
   status?: string;
   confirmedAt?: string;
   notifiedAt?: string;
+  clientRate?: number | string;
+  chinaRate?: number | string;
+  costAmount?: number | string;
+  chargeAmount?: number | string;
+  profitAmount?: number | string;
 };
 
 type InvoiceItemDraft = {
@@ -134,6 +140,9 @@ type InvoiceItemDraft = {
   quantity: string;
   packageCount: string;
   weight: string;
+  clientRate: string;
+  chinaRate: string;
+  chargeAmount: string;
   dimensions: string;
   description: string;
 };
@@ -154,6 +163,9 @@ function emptyInvoiceRow(): InvoiceItemDraft {
     quantity: "1",
     packageCount: "1",
     weight: "",
+    clientRate: "",
+    chinaRate: "",
+    chargeAmount: "",
     dimensions: "",
     description: "",
   };
@@ -647,8 +659,11 @@ function parseInvoiceRows(rows: string): InvoiceItemDraft[] {
         quantity: parts[3] || "1",
         packageCount: parts[4] || "1",
         weight: parts[5] || "",
-        dimensions: parts[6] || "",
-        description: parts.slice(7).join(" | "),
+        clientRate: parts[6] || "",
+        chinaRate: parts[7] || "",
+        chargeAmount: parts[8] || "",
+        dimensions: parts[9] || "",
+        description: parts.slice(10).join(" | "),
       };
     })
     .filter((item) => item.clientCode || item.track || item.title || item.description);
@@ -994,10 +1009,13 @@ export default function Home() {
         quantity: item.quantity.trim() || "1",
         packageCount: item.packageCount.trim() || "1",
         weight: item.weight.trim(),
+        clientRate: item.clientRate.trim(),
+        chinaRate: item.chinaRate.trim(),
+        chargeAmount: item.chargeAmount.trim(),
         dimensions: item.dimensions.trim(),
         description: item.description.trim(),
       }))
-      .filter((item) => item.clientCode || item.track || item.title || item.quantity !== "1" || item.packageCount !== "1" || item.weight || item.dimensions || item.description);
+      .filter((item) => item.clientCode || item.track || item.title || item.quantity !== "1" || item.packageCount !== "1" || item.weight || item.clientRate || item.chinaRate || item.chargeAmount || item.dimensions || item.description);
     if (!invoiceForm.number.trim()) {
       setError("Укажите номер накладной");
       return;
@@ -2046,6 +2064,9 @@ function InvoicesPanel({
                     <label>Количество<input value={row.quantity} onChange={(event) => updateRow(index, "quantity", event.target.value)} placeholder="1" inputMode="numeric" /></label>
                     <label>Коробок / мест<input value={row.packageCount} onChange={(event) => updateRow(index, "packageCount", event.target.value)} placeholder="1" inputMode="numeric" /></label>
                     <label>Вес, кг<input value={row.weight} onChange={(event) => updateRow(index, "weight", event.target.value)} placeholder="1.4" inputMode="decimal" /></label>
+                    <label>Цена клиенту/кг<input value={row.clientRate} onChange={(event) => updateRow(index, "clientRate", event.target.value)} placeholder="2500" inputMode="decimal" /></label>
+                    <label>Цена Китая/кг<input value={row.chinaRate} onChange={(event) => updateRow(index, "chinaRate", event.target.value)} placeholder="1800" inputMode="decimal" /></label>
+                    <label>Сумма клиенту<input value={row.chargeAmount} onChange={(event) => updateRow(index, "chargeAmount", event.target.value)} placeholder="3500" inputMode="decimal" /></label>
                     <label>Место / размер<input value={row.dimensions} onChange={(event) => updateRow(index, "dimensions", event.target.value)} placeholder="40x30x20 или мешок 2" /></label>
                     <label className="wide">Комментарий по позиции<input value={row.description} onChange={(event) => updateRow(index, "description", event.target.value)} placeholder="Цвет, модель, фото, уточнение по товару" /></label>
                   </div>

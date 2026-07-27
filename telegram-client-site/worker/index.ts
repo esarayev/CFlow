@@ -1464,6 +1464,14 @@ async function saveInvoicePayload(env: Env, invoice: Record<string, unknown>) {
 async function resolveInvoiceItem(env: Env, item: Record<string, unknown>) {
   const clientCode = normalizeGeneratedClientCode(item.clientCode || item.code || "");
   const client = await findClient(env, { clientCode });
+  const weight = String(item.weight || "");
+  const clientRate = toNumber(item.clientRate || item.client_rate);
+  const chinaRate = toNumber(item.chinaRate || item.china_rate);
+  const manualChargeAmount = toNumber(item.chargeAmount || item.amount);
+  const billableWeight = toNumber(weight);
+  const costAmount = Math.round(billableWeight * chinaRate);
+  const chargeAmount = Math.round(manualChargeAmount || (billableWeight * clientRate));
+  const profitAmount = chargeAmount - costAmount;
   return {
     ...item,
     clientCode,
@@ -1474,6 +1482,11 @@ async function resolveInvoiceItem(env: Env, item: Record<string, unknown>) {
     title: String(item.title || item.name || ""),
     quantity: String(item.quantity || item.qty || "1"),
     packageCount: String(positiveInt(item.packageCount || item.packages || item.package_count || "1")),
+    clientRate,
+    chinaRate,
+    costAmount,
+    chargeAmount,
+    profitAmount,
     boxIds: Array.isArray(item.boxIds) ? item.boxIds.map(String).filter(Boolean) : [],
     matchStatus: client ? "matched" : "not_found",
   };
@@ -1518,7 +1531,13 @@ async function createBoxFromInvoiceItem(env: Env, invoice: Record<string, unknow
     dimensions: String(item.dimensions || ""),
     route: "Китай -> Казахстан",
     payment: "Не оплачено",
-    amount: 0,
+    amount: item.chargeAmount || 0,
+    chinaRate: item.chinaRate || 0,
+    clientRate: item.clientRate || 0,
+    costAmount: item.costAmount || 0,
+    chargeAmount: item.chargeAmount || 0,
+    profitAmount: item.profitAmount || 0,
+    chargedAt: "",
     batch: String(invoice.number || invoice.title || invoice.id || ""),
     invoiceId: String(invoice.id || ""),
     invoiceItemId: String(item.id || ""),
@@ -1763,12 +1782,14 @@ async function issueClaim(env: Env, token: string, managerName = "Менедже
   const now = nowIso();
   const issuedBoxes = [];
   for (const box of scan.boxes) {
+    const chargeAmount = toNumber(box.chargeAmount || box.amount);
     const nextBox = {
       ...box,
       status: "Выдано",
       place: "Выдано клиенту",
       owner: managerName,
       issuedAt: now,
+      chargedAt: chargeAmount > 0 && !box.chargedAt ? now : box.chargedAt || "",
       updatedAt: now,
     };
     const saved = await upsertBox(env, nextBox);

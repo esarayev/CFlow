@@ -121,7 +121,7 @@ export default function ClientMiniApp() {
   const [isLoading, setIsLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ fullName: "", whatsappPhone: "" });
+  const [form, setForm] = useState({ fullName: "", whatsappPhone: "+7" });
 
   const refreshProfile = useCallback((showLoading = false) => {
     if (!initData) return;
@@ -327,7 +327,7 @@ export default function ClientMiniApp() {
           error={error}
           onSubmit={submitRegistration}
           onName={(value) => setForm((current) => ({ ...current, fullName: value }))}
-          onPhone={(value) => setForm((current) => ({ ...current, whatsappPhone: value }))}
+          onPhone={(value) => setForm((current) => ({ ...current, whatsappPhone: value.trim() ? value : "+7" }))}
         />
       </main>
     );
